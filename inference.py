@@ -33,7 +33,7 @@ def segment_image_smp(model_path, input_image_path, output_mask_path):
     print(f"Segmentation mask saved to {output_mask_path}")
 
 # Example usage:
-segment_image_smp("smp_unet_placenta.pth", "data/images/test_image.jpg", "test_mask_pred.png")
+segment_image_smp("smp_unet_placenta.pth", "data/validation/01.png", "test_mask_pred.png")
 
 
 def draw_circles_on_masked_image(input_image_path, mask_path, output_annotated_path):
@@ -59,4 +59,4 @@ def draw_circles_on_masked_image(input_image_path, mask_path, output_annotated_p
     print(f"Annotated image saved to {output_annotated_path}")
 
 # Example usage:
-draw_circles_on_masked_image("data/images/test_image.jpg", "test_mask_pred.png", "test_image_annotated.jpg")
+draw_circles_on_masked_image("data/validation/01.png", "test_mask_pred.png", "test_image_annotated.jpg")
