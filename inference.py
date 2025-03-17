@@ -102,7 +102,7 @@ def draw_contours_on_masked_image(input_image_path, mask, output_annotated_path,
 def main():
     # Define file paths
     model_path = "smp_unet_placenta.pth"           # Trained model weights
-    input_image_path = "data/validation/01.png"      # Input histological image
+    input_image_path = "data/validation/04.TIF"      # Input histological image
     output_mask_path = "test_mask_pred.png"          # Where to save the segmentation mask
     output_annotated_path = "test_image_annotated.jpg"  # Where to save the annotated image
 

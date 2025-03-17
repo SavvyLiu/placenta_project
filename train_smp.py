@@ -14,7 +14,7 @@ def train_smp():
     images_dir = "data/images"
     masks_dir = "data/masks"
     batch_size = 2
-    num_epochs = 10
+    num_epochs = 100
     lr = 1e-4
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
@@ -51,7 +51,9 @@ def train_smp():
     # -----------------------------
     # 5. Training Loop
     # -----------------------------
+    epoch_loss = 5.0
     for epoch in range(num_epochs):
+        prev_loss = epoch_loss
         model.train()
         epoch_loss = 0.0
         for images, masks in dataloader:
@@ -65,9 +67,11 @@ def train_smp():
             optimizer.step()
             
             epoch_loss += loss.item() * images.size(0)
-        
+
         epoch_loss /= len(dataset)
-        print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {epoch_loss:.4f}")
+        print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {epoch_loss:.4f}, Difference: {dice_loss(outputs, masks):.4f}, Difference Loss: {prev_loss - epoch_loss}")
+        if prev_loss - epoch_loss < 0.001:
+            break
     
     # -----------------------------
     # 6. Save the Trained Model
