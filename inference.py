@@ -53,6 +53,7 @@ def segment_image_smp(model_path, input_image_path, output_mask_path):
     return refined_mask
 
 
+
 def draw_contours_on_masked_image(input_image_path, mask, output_annotated_path, min_area=10, use_bounding_box=False):
     """
     Finds contours in the provided binary mask and draws either fluid contours (following the actual shape)
@@ -99,10 +100,35 @@ def draw_contours_on_masked_image(input_image_path, mask, output_annotated_path,
     print(f"Total segmented area (in pixels): {total_area:.2f}")
 
 
+def load_mask(image_path):
+    """
+    Loads an image as a grayscale mask and thresholds it to obtain a binary mask.
+    Assumes the image is saved such that pixels >127 represent the segmented area.
+    """
+    mask = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+    if mask is None:
+        raise FileNotFoundError(f"Image not found at {image_path}")
+    # Convert grayscale mask to binary: pixels above 127 are set to 1, else 0.
+    _, binary_mask = cv2.threshold(mask, 127, 1, cv2.THRESH_BINARY)
+    return binary_mask
+
+def iou_score(y_true, y_pred):
+    
+
+    """
+    Computes the Intersection over Union (IoU) score.
+    """
+    intersection = np.logical_and(y_true, y_pred)
+    union = np.logical_or(y_true, y_pred)
+    if np.sum(union) == 0:
+        return 1.0  # Both masks are empty.
+    return np.sum(intersection) / np.sum(union)
+
 def main():
     # Define file paths
-    model_path = "best_smp_unet_placenta.pth"           # Trained model weights
-    input_image_path = "data/validation/04.TIF"      # Input histological image
+    model_path = "smp_unet_placenta.pth"           # Trained model weights
+    input_image_path = "data/validation/01.png"      # Input histological image
+    ground_truth_path = 'data/masks/01.png'
     output_mask_path = "test_mask_pred.png"          # Where to save the segmentation mask
     output_annotated_path = "test_image_annotated.jpg"  # Where to save the annotated image
 
@@ -112,6 +138,14 @@ def main():
     # Step 2: Draw contours on the image based on the mask.
     # Set use_bounding_box=True if you prefer bounding boxes.
     draw_contours_on_masked_image(input_image_path, mask, output_annotated_path, min_area=10, use_bounding_box=False)
+
+    y_true = load_mask(ground_truth_path)
+    y_pred = load_mask(output_mask_path)
+    print(iou_score(y_true, y_pred))
+
+
+
+
 
 
 if __name__ == "__main__":
