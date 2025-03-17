@@ -14,7 +14,7 @@ def train_smp():
     images_dir = "data/images"
     masks_dir = "data/masks"
     batch_size = 2
-    num_epochs = 100
+    num_epochs = 35
     lr = 1e-4
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
@@ -70,8 +70,6 @@ def train_smp():
 
         epoch_loss /= len(dataset)
         print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {epoch_loss:.4f}, Difference: {dice_loss(outputs, masks):.4f}, Difference Loss: {prev_loss - epoch_loss}")
-        if prev_loss - epoch_loss < 0.001:
-            break
     
     # -----------------------------
     # 6. Save the Trained Model
