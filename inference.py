@@ -108,8 +108,8 @@ def load_mask(image_path):
     mask = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
     if mask is None:
         raise FileNotFoundError(f"Image not found at {image_path}")
-    # Convert grayscale mask to binary: pixels above 127 are set to 1, else 0.
-    _, binary_mask = cv2.threshold(mask, 127, 1, cv2.THRESH_BINARY)
+    # Convert grayscale mask to binary: pixels above 50 are set to 1, else 0.
+    _, binary_mask = cv2.threshold(mask, 50, 1, cv2.THRESH_BINARY)
     return binary_mask
 
 def iou_score(y_true, y_pred):
@@ -124,11 +124,19 @@ def iou_score(y_true, y_pred):
         return 1.0  # Both masks are empty.
     return np.sum(intersection) / np.sum(union)
 
+
+def dice_coefficient(y_true, y_pred):
+    intersection = np.sum(y_true * y_pred)
+    dice = (2. * intersection) / (np.sum(y_true) + np.sum(y_pred))
+    return dice
+
+
+
 def main():
     # Define file paths
     model_path = "smp_unet_placenta.pth"           # Trained model weights
     input_image_path = "data/validation/01.png"      # Input histological image
-    ground_truth_path = 'data/masks/01.png'
+    
     output_mask_path = "test_mask_pred.png"          # Where to save the segmentation mask
     output_annotated_path = "test_image_annotated.jpg"  # Where to save the annotated image
 
@@ -138,10 +146,16 @@ def main():
     # Step 2: Draw contours on the image based on the mask.
     # Set use_bounding_box=True if you prefer bounding boxes.
     draw_contours_on_masked_image(input_image_path, mask, output_annotated_path, min_area=10, use_bounding_box=False)
+    accuracy()
+    
+def accuracy():
 
+    output_mask_path = "test_mask_pred.png"   
+    ground_truth_path = 'data/validation/ground_truth/valid01.png'
     y_true = load_mask(ground_truth_path)
     y_pred = load_mask(output_mask_path)
     print(iou_score(y_true, y_pred))
+    print(dice_coefficient(y_true, y_pred))
 
 
 
