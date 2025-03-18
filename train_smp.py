@@ -13,8 +13,8 @@ def train_smp():
     # -----------------------------
     images_dir = "data/images"
     masks_dir = "data/masks"
-    batch_size = 2
-    num_epochs = 35
+    batch_size = 1
+    num_epochs = 100
     lr = 1e-4
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
