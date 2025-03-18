@@ -136,7 +136,7 @@ def main():
     # Define file paths
     model_path = "smp_unet_placenta.pth"           # Trained model weights
     input_image_path = "data/validation/01.png"      # Input histological image
-    
+    ground_truth_path = 'data/validation/ground_truth/valid01.png'
     output_mask_path = "test_mask_pred.png"          # Where to save the segmentation mask
     output_annotated_path = "test_image_annotated.jpg"  # Where to save the annotated image
 
@@ -146,21 +146,48 @@ def main():
     # Step 2: Draw contours on the image based on the mask.
     # Set use_bounding_box=True if you prefer bounding boxes.
     draw_contours_on_masked_image(input_image_path, mask, output_annotated_path, min_area=10, use_bounding_box=False)
-    accuracy()
+    accuracy(output_mask_path, ground_truth_path)
+    close_open(output_mask_path, ground_truth_path)
     
-def accuracy():
+def accuracy(output_mask_path, ground_truth_path):
 
-    output_mask_path = "test_mask_pred.png"   
-    ground_truth_path = 'data/validation/ground_truth/valid01.png'
     y_true = load_mask(ground_truth_path)
     y_pred = load_mask(output_mask_path)
     print(iou_score(y_true, y_pred))
     print(dice_coefficient(y_true, y_pred))
 
+def close_open(output_mask_path, ground_truth_path):
+    gt_bin = load_mask(ground_truth_path)
+    pred_bin = load_mask(output_mask_path)
 
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5,5))
+    # Erosion: shrinks foreground
+    pred_eroded = cv2.erode(pred_bin, kernel)
 
+    # Dilation: expands foreground
+    pred_dilated = cv2.dilate(pred_bin, kernel)
 
+    # Opening: erosion followed by dilation (removes small noise)
+    pred_opened = cv2.morphologyEx(pred_bin, cv2.MORPH_OPEN, kernel)
 
+    # Closing: dilation followed by erosion (fills small holes)
+    pred_closed = cv2.morphologyEx(pred_bin, cv2.MORPH_CLOSE, kernel)
+
+    # 5. Compute IoU after each operation
+    iou_eroded = iou_score(gt_bin, pred_eroded)
+    iou_dilated = iou_score(gt_bin, pred_dilated)
+    iou_opened = iou_score(gt_bin, pred_opened)
+    iou_closed = iou_score(gt_bin, pred_closed)
+
+    print("Eroded IoU:", iou_eroded)
+    print("Dilated IoU:", iou_dilated)
+    print("Opened IoU:", iou_opened)
+    print("Closed IoU:", iou_closed)
+    cv2.imwrite('pred_eroded.png', pred_eroded * 255)
+    cv2.imwrite('pred_dilated.png', pred_dilated * 255)
+    cv2.imwrite('pred_opened.png', pred_opened * 255)
+    cv2.imwrite('pred_closed.png', pred_closed * 255)
+    
 
 if __name__ == "__main__":
     main()
