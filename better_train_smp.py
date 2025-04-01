@@ -1,151 +1,108 @@
 import torch
 import torch.optim as optim
 import torch.nn as nn
-from torch.utils.data import DataLoader, random_split
-import segmentation_models_pytorch as smp
+from torch.utils.data import DataLoader
+import torchvision
+import segmentation_models_pytorch as smp  # still using its loss if desired
 from PlacentaDataset import PlacentaDataset
 
-# Data augmentation with Albumentations
-import albumentations as A
-from albumentations.pytorch import ToTensorV2
+
+# Define a custom U-Net using EfficientNet_V2_L as the encoder.
+class EfficientNetUNet(nn.Module):
+    def __init__(self, n_classes=1):
+        super(EfficientNetUNet, self).__init__()
+        # Load the pretrained EfficientNet_V2_L model from torchvision
+        weights = torchvision.models.EfficientNet_V2_L_Weights.IMAGENET1K_V1
+        self.encoder = torchvision.models.efficientnet_v2_l(weights=weights)
+        # Remove the classifier and use the feature extractor
+        self.encoder_features = self.encoder.features  # output shape: (B, 1280, H/32, W/32)
+
+        # Build a simple decoder: series of transposed convolutions to upsample the features.
+        self.decoder = nn.Sequential(
+            nn.ConvTranspose2d(1280, 512, kernel_size=2, stride=2),
+            nn.ReLU(inplace=True),
+            nn.ConvTranspose2d(512, 256, kernel_size=2, stride=2),
+            nn.ReLU(inplace=True),
+            nn.ConvTranspose2d(256, 64, kernel_size=2, stride=2),
+            nn.ReLU(inplace=True),
+            nn.ConvTranspose2d(64, 32, kernel_size=2, stride=2),
+            nn.ReLU(inplace=True),
+        )
+        # Final 1x1 convolution to get the desired number of output classes.
+        self.final_conv = nn.Conv2d(32, n_classes, kernel_size=1)
+
+    def forward(self, x):
+        # Extract features from the encoder.
+        features = self.encoder_features(x)  # shape: (B, 1280, H/32, W/32)
+        x = self.decoder(features)  # progressively upsample the feature maps
+        x = self.final_conv(x)
+        return x
 
 
-def train_smp():
-    # -----------------------------
+def train_efficientnet():
+    # -------------------------------------
     # 1. Hyperparameters & Setup
-    # -----------------------------
+    # -------------------------------------
     images_dir = "data/images"
     masks_dir = "data/masks"
-    batch_size = 4  # Increased batch size if VRAM permits
+    batch_size = 1
     num_epochs = 100
     lr = 1e-4
-    train_val_split = 0.8  # 80% training, 20% validation
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # -----------------------------
-    # 2. Data Augmentation & Transforms
-    # -----------------------------
-    # Training augmentation and normalization
-    train_transform = A.Compose([
-        A.HorizontalFlip(p=0.5),
-        A.RandomRotate90(p=0.5),
-        # Use Affine instead of ShiftScaleRotate to avoid warning
-        A.Affine(translate_percent=0.0625, scale=0.1, rotate=15, p=0.5),
-        A.Normalize(mean=(0.485, 0.456, 0.406),
-                    std=(0.229, 0.224, 0.225)),
-        ToTensorV2(),
-    ])
-    # Validation: only normalization and conversion to tensor
-    val_transform = A.Compose([
-        A.Normalize(mean=(0.485, 0.456, 0.406),
-                    std=(0.229, 0.224, 0.225)),
-        ToTensorV2(),
-    ])
+    # -------------------------------------
+    # 2. Create Dataset & DataLoader
+    # -------------------------------------
+    dataset = PlacentaDataset(images_dir, masks_dir)
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
-    # -----------------------------
-    # 3. Create Dataset, Split & DataLoader
-    # -----------------------------
-    full_dataset = PlacentaDataset(images_dir, masks_dir, transform=train_transform)
-    total_size = len(full_dataset)
-    train_size = int(train_val_split * total_size)
-    val_size = total_size - train_size
-    train_dataset, val_dataset = random_split(full_dataset, [train_size, val_size])
-
-    # Change transform for validation dataset if applicable
-    if hasattr(val_dataset, 'dataset'):
-        val_dataset.dataset.transform = val_transform
-
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True,
-                              num_workers=4, pin_memory=True)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False,
-                            num_workers=4, pin_memory=True)
-
-    # -----------------------------
-    # 4. Define the Model
-    # -----------------------------
-    model = smp.Unet(
-        encoder_name="resnet34",
-        encoder_weights="imagenet",
-        in_channels=3,
-        classes=1
-    )
+    # -------------------------------------
+    # 3. Instantiate the Model with the new backbone
+    # -------------------------------------
+    model = EfficientNetUNet(n_classes=1)
     model.to(device)
 
-    # -----------------------------
-    # 5. Define Loss, Optimizer & Scheduler
-    # -----------------------------
+    # -------------------------------------
+    # 4. Define Loss and Optimizer
+    # -------------------------------------
+    # Using a combination of Dice Loss and Binary Cross-Entropy Loss.
     dice_loss = smp.losses.DiceLoss(mode='binary')
     bce_loss = nn.BCEWithLogitsLoss()
-    lambda_dice = 1.0
-    lambda_bce = 1.0
 
     def combined_loss(pred, target):
-        return lambda_bce * bce_loss(pred, target) + lambda_dice * dice_loss(pred, target)
+        return bce_loss(pred, target) + dice_loss(pred, target)
 
     optimizer = optim.Adam(model.parameters(), lr=lr)
-    # Removed verbose parameter as it is deprecated.
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5,
-                                                     patience=5)
-    # Updated usage: using torch.amp instead of torch.cuda.amp.
-    scaler = torch.amp.GradScaler()
 
-    # -----------------------------
-    # 6. Training Loop with Validation, Early Stopping & Checkpointing
-    # -----------------------------
-    best_val_loss = float('inf')
-    patience = 10  # epochs to wait for improvement
-    patience_counter = 0
-
+    # -------------------------------------
+    # 5. Training Loop
+    # -------------------------------------
+    epoch_loss = 5.0
     for epoch in range(num_epochs):
+        prev_loss = epoch_loss
         model.train()
-        train_loss = 0.0
-
-        for images, masks in train_loader:
+        epoch_loss = 0.0
+        for images, masks in dataloader:
             images = images.to(device)
             masks = masks.to(device)
 
             optimizer.zero_grad()
-            # Use torch.amp.autocast with device type 'cuda'
-            with torch.amp.autocast(device_type='cuda'):
-                outputs = model(images)
-                loss = combined_loss(outputs, masks)
+            outputs = model(images)  # shape: (B, 1, H, W)
+            loss = combined_loss(outputs, masks)
+            loss.backward()
+            optimizer.step()
 
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
+            epoch_loss += loss.item() * images.size(0)
 
-            train_loss += loss.item() * images.size(0)
+        epoch_loss /= len(dataset)
+        print(f"Epoch [{epoch + 1}/{num_epochs}], Loss: {epoch_loss:.4f}, Improvement: {prev_loss - epoch_loss:.4f}")
 
-        train_loss /= len(train_loader.dataset)
-
-        # Validation Phase
-        model.eval()
-        val_loss = 0.0
-        with torch.no_grad():
-            for images, masks in val_loader:
-                images = images.to(device)
-                masks = masks.to(device)
-                with torch.amp.autocast(device_type='cuda'):
-                    outputs = model(images)
-                    loss = combined_loss(outputs, masks)
-                val_loss += loss.item() * images.size(0)
-        val_loss /= len(val_loader.dataset)
-
-        scheduler.step(val_loss)
-
-        print(f"Epoch [{epoch + 1}/{num_epochs}]  Train Loss: {train_loss:.4f}  Val Loss: {val_loss:.4f}")
-
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
-            patience_counter = 0
-            torch.save(model.state_dict(), "best_smp_unet_placenta.pth")
-            print("Validation loss improved. Model saved as best_smp_unet_placenta.pth")
-        else:
-            patience_counter += 1
-            if patience_counter >= patience:
-                print("Early stopping triggered.")
-                break
+    # -------------------------------------
+    # 6. Save the Trained Model
+    # -------------------------------------
+    torch.save(model.state_dict(), "efficientnet_unet_placenta.pth")
+    print("Model saved as efficientnet_unet_placenta.pth")
 
 
 if __name__ == "__main__":
-    train_smp()
+    train_efficientnet()
