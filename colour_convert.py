@@ -31,4 +31,4 @@ def convert_grey_foreground_mask(mask_path, output_binary_path):
     return grey_mask
 
 # Example usage:
-binary_mask = convert_grey_foreground_mask("data/masks/07.png", "data/masks/07.png")
+binary_mask = convert_grey_foreground_mask("data/masks/16.png", "data/masks/16.png")
