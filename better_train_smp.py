@@ -17,22 +17,29 @@ class EfficientNetUNet(nn.Module):
         # Remove the classifier and use the feature extractor
         self.encoder_features = self.encoder.features  # output shape: (B, 1280, H/32, W/32)
 
-        # Build a simple decoder: series of transposed convolutions to upsample the features.
+        # Build a decoder with correct number of upsampling steps
         self.decoder = nn.Sequential(
+            # First upsampling: 1280 -> 512
             nn.ConvTranspose2d(1280, 512, kernel_size=2, stride=2),
             nn.ReLU(inplace=True),
+            # Second upsampling: 512 -> 256
             nn.ConvTranspose2d(512, 256, kernel_size=2, stride=2),
             nn.ReLU(inplace=True),
-            nn.ConvTranspose2d(256, 64, kernel_size=2, stride=2),
+            # Third upsampling: 256 -> 128
+            nn.ConvTranspose2d(256, 128, kernel_size=2, stride=2),
             nn.ReLU(inplace=True),
+            # Fourth upsampling: 128 -> 64
+            nn.ConvTranspose2d(128, 64, kernel_size=2, stride=2),
+            nn.ReLU(inplace=True),
+            # Fifth upsampling: 64 -> 32
             nn.ConvTranspose2d(64, 32, kernel_size=2, stride=2),
             nn.ReLU(inplace=True),
         )
-        # Final 1x1 convolution to get the desired number of output classes.
+        # Final 1x1 convolution to get the desired number of output classes
         self.final_conv = nn.Conv2d(32, n_classes, kernel_size=1)
 
     def forward(self, x):
-        # Extract features from the encoder.
+        # Extract features from the encoder
         features = self.encoder_features(x)  # shape: (B, 1280, H/32, W/32)
         x = self.decoder(features)  # progressively upsample the feature maps
         x = self.final_conv(x)
