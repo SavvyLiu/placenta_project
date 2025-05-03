@@ -12,8 +12,8 @@ def train_smp():
     # -----------------------------
     # 1. Hyperparameters & Setup
     # -----------------------------
-    images_dir = "data/images"
-    masks_dir = "data/masks"
+    images_dir = "../data/images"
+    masks_dir = "../data/masks"
     batch_size = 1
     num_epochs = 50
     lr = 1e-4

@@ -135,8 +135,8 @@ def dice_coefficient(y_true, y_pred):
 def main():
     # Define file paths
     model_path = "smp_unet_placenta.pth"           # Trained model weights
-    input_image_path = "data/validation/01.png"      # Input histological image
-    ground_truth_path = 'data/validation/ground_truth/valid01.png'
+    input_image_path = "../data/validation/01.png"  # Input histological image
+    ground_truth_path = '../data/validation/ground_truth/valid01.png'
     output_mask_path = "test_mask_pred.png"          # Where to save the segmentation mask
     output_annotated_path = "test_image_annotated.jpg"  # Where to save the annotated image
 

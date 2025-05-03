@@ -162,15 +162,15 @@ def save_augmented(image: torch.Tensor, mask: torch.Tensor, out_dir_images, out_
 
 if __name__ == '__main__':
     # Define input directories.
-    image_dir = 'data/images'
-    mask_dir = 'data/masks'
+    image_dir = '../data/images'
+    mask_dir = '../data/masks'
 
     # Create dataset.
     dataset = SegmentationDataset(image_dir, mask_dir, transform=joint_transform)
 
     # Output directories for augmented results.
-    out_dir_images = 'data/images'
-    out_dir_masks = 'data/masks'
+    out_dir_images = '../data/images'
+    out_dir_masks = '../data/masks'
 
     # Process every item in the dataset.
     for idx in range(len(dataset)):

@@ -79,8 +79,8 @@ def cross_validate():
     # -----------------------------
     # Hyperparameters & Setup
     # -----------------------------
-    images_dir = "data/images"
-    masks_dir = "data/masks"
+    images_dir = "../data/images"
+    masks_dir = "../data/masks"
     num_epochs = 50
     batch_size = 2
     lr = 1e-4
