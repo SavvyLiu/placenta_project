@@ -46,14 +46,14 @@ class EfficientNetUNet(nn.Module):
         return x
 
 
-def train_efficientnet():
+def train_efficientnet(numofepochs):
     # -------------------------------------
     # 1. Hyperparameters & Setup
     # -------------------------------------
     images_dir = "../data/images"
     masks_dir = "../data/masks"
     batch_size = 1
-    num_epochs = 100
+    num_epochs = numofepochs
     lr = 1e-4
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -112,4 +112,5 @@ def train_efficientnet():
 
 
 if __name__ == "__main__":
-    train_efficientnet()
+    numofepochs = input("Please enter number of Epochs: ")
+    train_efficientnet(numofepochs)
