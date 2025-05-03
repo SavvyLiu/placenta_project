@@ -4,15 +4,21 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 import segmentation_models_pytorch as smp
 from PlacentaDataset import PlacentaDataset
+import os
 # Make sure PlacentaDataset is defined or imported here
 # from dataset import PlacentaDataset
 
-def train_smp():
+def train_smp(use_subset=False):
     # -----------------------------
     # 1. Hyperparameters & Setup
     # -----------------------------
-    images_dir = "../data/images"
-    masks_dir = "../data/masks"
+    # Get the directory where the script is located
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    # Go up one level to the project root
+    project_dir = os.path.dirname(script_dir)
+    # Construct paths relative to the project root
+    images_dir = os.path.join(project_dir, "data", "images")
+    masks_dir = os.path.join(project_dir, "data", "masks")
     batch_size = 1
     num_epochs = 100
     lr = 1e-4
@@ -21,7 +27,7 @@ def train_smp():
     # -----------------------------
     # 2. Create Dataset & DataLoader
     # -----------------------------
-    dataset = PlacentaDataset(images_dir, masks_dir)
+    dataset = PlacentaDataset(images_dir, masks_dir, use_subset=use_subset)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
     
     # -----------------------------
@@ -78,4 +84,5 @@ def train_smp():
     print("Model saved as smp_unet_placenta.pth")
 
 if __name__ == "__main__":
-    train_smp()
+    use_subset = input("Use subset of 4 images for training? (y/n): ").lower() == 'y'
+    train_smp(use_subset)

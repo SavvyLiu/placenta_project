@@ -6,14 +6,20 @@ import segmentation_models_pytorch as smp
 from PlacentaDataset import PlacentaDataset
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
+import os
 
 
-def train_smp():
+def train_smp(use_subset=False):
     # -----------------------------
     # 1. Hyperparameters & Setup
     # -----------------------------
-    images_dir = "../data/images"
-    masks_dir = "../data/masks"
+    # Get the directory where the script is located
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    # Go up one level to the project root
+    project_dir = os.path.dirname(script_dir)
+    # Construct paths relative to the project root
+    images_dir = os.path.join(project_dir, "data", "images")
+    masks_dir = os.path.join(project_dir, "data", "masks")
     batch_size = 1
     num_epochs = 50
     lr = 1e-4
@@ -43,7 +49,7 @@ def train_smp():
     # -----------------------------
     # 3. Create Dataset, Split & DataLoader
     # -----------------------------
-    full_dataset = PlacentaDataset(images_dir, masks_dir, transform=train_transform)
+    full_dataset = PlacentaDataset(images_dir, masks_dir, transform=train_transform, use_subset=use_subset)
     total_size = len(full_dataset)
     train_size = int(train_val_split * total_size)
     val_size = total_size - train_size
@@ -141,4 +147,5 @@ def train_smp():
 
 
 if __name__ == "__main__":
-    train_smp()
+    use_subset = input("Use subset of 4 images for training? (y/n): ").lower() == 'y'
+    train_smp(use_subset)

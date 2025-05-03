@@ -160,20 +160,27 @@ def save_augmented(image: torch.Tensor, mask: torch.Tensor, out_dir_images, out_
     print(f"Augmented mask saved to: {mask_path}")
 
 
-if __name__ == '__main__':
-    # Define input directories.
-    image_dir = '../data/images'
-    mask_dir = '../data/masks'
+def augment_images():
+    # Get the directory where the script is located
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    # Go up one level to the project root
+    project_dir = os.path.dirname(script_dir)
+    # Construct paths relative to the project root
+    image_dir = os.path.join(project_dir, "data", "images")
+    out_dir_images = os.path.join(project_dir, "data", "images")
 
     # Create dataset.
-    dataset = SegmentationDataset(image_dir, mask_dir, transform=joint_transform)
+    dataset = SegmentationDataset(image_dir, image_dir, transform=joint_transform)
 
     # Output directories for augmented results.
-    out_dir_images = '../data/images'
-    out_dir_masks = '../data/masks'
+    out_dir_masks = os.path.join(project_dir, "data", "masks")
 
     # Process every item in the dataset.
     for idx in range(len(dataset)):
         image, mask = dataset[idx]
         prefix = f'augment_{idx:02d}'
         save_augmented(image, mask, out_dir_images, out_dir_masks, prefix)
+
+
+if __name__ == '__main__':
+    augment_images()

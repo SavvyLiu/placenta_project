@@ -5,6 +5,7 @@ from torch.utils.data import DataLoader, Subset
 import segmentation_models_pytorch as smp
 from PlacentaDataset import PlacentaDataset
 from sklearn.model_selection import KFold
+import os
 
 
 def combined_loss_fn(pred, target, dice_loss, bce_loss):
@@ -75,12 +76,17 @@ def train_fold(fold, train_idx, val_idx, dataset, num_epochs, batch_size, lr, de
     return best_val_loss
 
 
-def cross_validate():
+def cross_validate(use_subset=False):
     # -----------------------------
     # Hyperparameters & Setup
     # -----------------------------
-    images_dir = "../data/images"
-    masks_dir = "../data/masks"
+    # Get the directory where the script is located
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    # Go up one level to the project root
+    project_dir = os.path.dirname(script_dir)
+    # Construct paths relative to the project root
+    images_dir = os.path.join(project_dir, "data", "images")
+    masks_dir = os.path.join(project_dir, "data", "masks")
     num_epochs = 50
     batch_size = 2
     lr = 1e-4
@@ -88,7 +94,7 @@ def cross_validate():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Create the dataset
-    dataset = PlacentaDataset(images_dir, masks_dir)
+    dataset = PlacentaDataset(images_dir, masks_dir, use_subset=use_subset)
 
     # Initialize KFold cross-validation
     kf = KFold(n_splits=num_folds, shuffle=True, random_state=42)
@@ -103,4 +109,5 @@ def cross_validate():
 
 
 if __name__ == "__main__":
-    cross_validate()
+    use_subset = input("Use subset of 4 images for training? (y/n): ").lower() == 'y'
+    cross_validate(use_subset)
