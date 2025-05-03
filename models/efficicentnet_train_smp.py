@@ -53,7 +53,7 @@ def train_efficientnet(numofepochs):
     images_dir = "../data/images"
     masks_dir = "../data/masks"
     batch_size = 1
-    num_epochs = numofepochs
+    num_epochs = int(numofepochs)
     lr = 1e-4
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
