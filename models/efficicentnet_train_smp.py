@@ -4,7 +4,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 import torchvision
 import segmentation_models_pytorch as smp  # still using its loss if desired
-from PlacentaDataset import PlacentaDataset
+from older_models.PlacentaDataset import PlacentaDataset
 
 
 # Define a custom U-Net using EfficientNet_V2_L as the encoder.
