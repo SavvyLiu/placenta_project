@@ -1,5 +1,7 @@
 # vit_unet_flexible.py
 
+# NEEDS REWORKING, DELETE NAWEENS MANUAL IMAGE RESIZING AND JUST CHANGE THE BLOCK SIZE IN MODEL PARAMETERS TO AVOID IMAGE RES NOT BEING PERFECT MULTIPLE OF 16
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
