@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The purpose of this project is to apply machine learning techiques to automate the segmentation of placental histology slides. 
+The purpose of this project is to apply machine learning techniques to automate the segmentation of placental histology slides. 
 
 ## Getting Started
 
