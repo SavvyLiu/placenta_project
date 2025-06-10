@@ -28,22 +28,34 @@ def main():
         default=0,
         help="Use only the first N images/masks for quick debugging (0 = full dataset)"
     )
+    parser.add_argument(
+        "--lr-patience", 
+        type=int,
+        default=5,
+        help="Learning rate scheduler patience (epochs to wait before reducing LR)"
+    )
+    parser.add_argument(
+        "--lr-factor",
+        type=float, 
+        default=0.5,
+        help="Learning rate reduction factor (multiply LR by this when reducing)"
+    )
     args = parser.parse_args()
 
     for m in args.models:
         print(f"\n=== Training {m} ===")
         if m == "efficientnet":
-            # train_efficientnet expects (numofepochs: str, use_subset: bool)
-            train_efficientnet(str(args.epochs), subset_size=args.subset_size)
+            # train_efficientnet expects (numofepochs: str, subset_size: int, lr_patience: int, lr_factor: float)
+            train_efficientnet(str(args.epochs), subset_size=args.subset_size, lr_patience=args.lr_patience, lr_factor=args.lr_factor)
         elif m == "regnet":
-            # train_regnet(numofepochs: str, use_subset: bool)
-            train_regnet(str(args.epochs), subset_size=args.subset_size)
+            # train_regnet(numofepochs: str, subset_size: int, lr_patience: int, lr_factor: float)
+            train_regnet(str(args.epochs), subset_size=args.subset_size, lr_patience=args.lr_patience, lr_factor=args.lr_factor)
         elif m == "unet":
-            # train_smp(use_subset: bool) – epochs is fixed inside
-            train_smp(args.epochs, subset_size=args.subset_size)
+            # train_smp(num_epochs: int, subset_size: int, lr_patience: int, lr_factor: float)
+            train_smp(args.epochs, subset_size=args.subset_size, lr_patience=args.lr_patience, lr_factor=args.lr_factor)
         elif m == "vit":
-            # train_vit expects (num_epochs: int, use_subset: bool)
-            train_vit(args.epochs, subset_size=args.subset_size)
+            # train_vit expects (num_epochs: int, subset_size: int, lr_patience: int, lr_factor: float)
+            train_vit(args.epochs, subset_size=args.subset_size, lr_patience=args.lr_patience, lr_factor=args.lr_factor)
         print(f"--- {m} done ---")
 
 if __name__ == "__main__":

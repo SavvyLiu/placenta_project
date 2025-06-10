@@ -103,7 +103,7 @@ class ViT_UNet_Flexible(nn.Module):
         x_out = self.final_conv(x_dec)
         return x_out[..., :H, :W]
 
-def train_vit(num_epochs: int, use_subset=False):
+def train_vit(num_epochs: int, subset_size=0, lr_patience=5, lr_factor=0.5):
     # Determine project directories
     script_dir = os.path.dirname(os.path.abspath(__file__))
     project_dir = os.path.dirname(script_dir)
@@ -113,7 +113,7 @@ def train_vit(num_epochs: int, use_subset=False):
     lr         = 1e-4
     device     = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    ds     = PlacentaDataset(images_dir, masks_dir, use_subset=use_subset)
+    ds     = PlacentaDataset(images_dir, masks_dir, subset_size=subset_size)
     loader = DataLoader(ds, batch_size=batch_size, shuffle=True)
 
     model     = ViT_UNet_Flexible(n_classes=1).to(device)
@@ -121,6 +121,9 @@ def train_vit(num_epochs: int, use_subset=False):
     bce_loss  = nn.BCEWithLogitsLoss()
     def loss_fn(p, t): return bce_loss(p, t) + dice_loss(p, t)
     opt       = torch.optim.Adam(model.parameters(), lr=lr)
+
+    # Add learning rate scheduler
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, 'min', patience=lr_patience, factor=lr_factor)
 
     prev = float("inf")
     for epoch in range(num_epochs):
@@ -136,7 +139,13 @@ def train_vit(num_epochs: int, use_subset=False):
             total += loss.item() * imgs.size(0)
 
         avg = total / len(ds)
+        
+        # Step the scheduler
+        scheduler.step(avg)
+        current_lr = opt.param_groups[0]['lr']
         print(f"Epoch {epoch+1}/{num_epochs}  Loss={avg:.4f}  Δ={prev-avg:.4f}")
+        if epoch > 0:
+            print(f"  LR: {current_lr:.6f}")
         prev = avg
 
     # ensure trained_models directory exists
@@ -148,4 +157,7 @@ def train_vit(num_epochs: int, use_subset=False):
 
 if __name__ == "__main__":
     n = int(input("Enter number of epochs: "))
-    train_vit(n)
+    subset_size = int(input("Enter subset size (0 = full dataset): ") or "0")
+    lr_patience = int(input("Enter LR scheduler patience (default 5): ") or "5")
+    lr_factor = float(input("Enter LR reduction factor (default 0.5): ") or "0.5")
+    train_vit(n, subset_size=subset_size, lr_patience=lr_patience, lr_factor=lr_factor)

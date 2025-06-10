@@ -46,7 +46,7 @@ class RegNetUNet(nn.Module):
         return x
 
 
-def train_regnet(numofepochs, subset_size=0):
+def train_regnet(numofepochs, subset_size=0, lr_patience=5, lr_factor=0.5):
     # -------------------------------------
     # 1. Hyperparameters & Setup
     # -------------------------------------
@@ -84,6 +84,9 @@ def train_regnet(numofepochs, subset_size=0):
         return bce_loss(pred, target) + dice_loss(pred, target)
 
     optimizer = optim.Adam(model.parameters(), lr=lr)
+    
+    # Add learning rate scheduler
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=lr_patience, factor=lr_factor)
 
     # -------------------------------------
     # 5. Training Loop
@@ -106,7 +109,13 @@ def train_regnet(numofepochs, subset_size=0):
             epoch_loss += loss.item() * images.size(0)
 
         epoch_loss /= len(dataset)
+        
+        # Step the scheduler
+        scheduler.step(epoch_loss)
+        current_lr = optimizer.param_groups[0]['lr']
         print(f"Epoch [{epoch + 1}/{num_epochs}], Loss: {epoch_loss:.4f}, Improvement: {prev_loss - epoch_loss:.4f}")
+        if epoch > 0:
+            print(f"  LR: {current_lr:.6f}")
 
     # -------------------------------------
     # 6. Save the Trained Model
@@ -121,5 +130,7 @@ def train_regnet(numofepochs, subset_size=0):
 
 if __name__ == "__main__":
     numofepochs = input("Please enter number of Epochs: ")
-    subset_size = int(input("Enter subset size (0 = full dataset): "))
-    train_regnet(numofepochs, subset_size=subset_size)
+    subset_size = int(input("Enter subset size (0 = full dataset): ") or "0")
+    lr_patience = int(input("Enter LR scheduler patience (default 5): ") or "5")
+    lr_factor = float(input("Enter LR reduction factor (default 0.5): ") or "0.5")
+    train_regnet(numofepochs, subset_size=subset_size, lr_patience=lr_patience, lr_factor=lr_factor)
