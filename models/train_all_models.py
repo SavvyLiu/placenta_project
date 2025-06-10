@@ -23,9 +23,10 @@ def main():
         help="Number of epochs (for scripts that accept it)"
     )
     parser.add_argument(
-        "--subset",
-        action="store_true",
-        help="Use subset of 4 images for quick debugging"
+        "--subset-size",
+        type=int,
+        default=0,
+        help="Use only the first N images/masks for quick debugging (0 = full dataset)"
     )
     args = parser.parse_args()
 
@@ -33,16 +34,16 @@ def main():
         print(f"\n=== Training {m} ===")
         if m == "efficientnet":
             # train_efficientnet expects (numofepochs: str, use_subset: bool)
-            train_efficientnet(str(args.epochs), use_subset=args.subset)
+            train_efficientnet(str(args.epochs), subset_size=args.subset_size)
         elif m == "regnet":
             # train_regnet(numofepochs: str, use_subset: bool)
-            train_regnet(str(args.epochs), use_subset=args.subset)
+            train_regnet(str(args.epochs), subset_size=args.subset_size)
         elif m == "unet":
             # train_smp(use_subset: bool) – epochs is fixed inside
-            train_smp(use_subset=args.subset)
+            train_smp(args.epochs, subset_size=args.subset_size)
         elif m == "vit":
             # train_vit expects (num_epochs: int, use_subset: bool)
-            train_vit(args.epochs, use_subset=args.subset)
+            train_vit(args.epochs, subset_size=args.subset_size)
         print(f"--- {m} done ---")
 
 if __name__ == "__main__":

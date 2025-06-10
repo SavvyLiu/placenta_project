@@ -5,7 +5,7 @@ import numpy as np
 from torch.utils.data import Dataset
 
 class PlacentaDataset(Dataset):
-    def __init__(self, images_dir, masks_dir, transform=None, use_subset=False):
+    def __init__(self, images_dir, masks_dir, transform=None, subset_size=0):
         self.images_dir = images_dir
         self.masks_dir = masks_dir
         self.transform = transform
@@ -23,10 +23,10 @@ class PlacentaDataset(Dataset):
         
         assert len(self.common_names) > 0, "No matching image-mask pairs found!"
         
-        # If use_subset is True, only use the first 4 images
-        if use_subset:
-            self.common_names = self.common_names[:4]
-            print("Using subset of 4 images for training")
+        # If subset_size > 0, only use the first subset_size images
+        if subset_size and subset_size > 0:
+            self.common_names = self.common_names[:subset_size]
+            print(f"Using subset of {subset_size} images for training")
         
         # Print dataset info for debugging
         print(f"Found {len(self.common_names)} image-mask pairs")

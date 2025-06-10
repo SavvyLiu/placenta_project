@@ -47,7 +47,7 @@ class EfficientNetUNet(nn.Module):
         return x
 
 
-def train_efficientnet(numofepochs, use_subset=False):
+def train_efficientnet(numofepochs, subset_size=0):
     # -------------------------------------
     # 1. Hyperparameters & Setup
     # -------------------------------------
@@ -66,7 +66,7 @@ def train_efficientnet(numofepochs, use_subset=False):
     # -------------------------------------
     # 2. Create Dataset & DataLoader
     # -------------------------------------
-    dataset = PlacentaDataset(images_dir, masks_dir, use_subset=use_subset)
+    dataset = PlacentaDataset(images_dir, masks_dir, subset_size=subset_size)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
     # -------------------------------------
@@ -123,5 +123,5 @@ def train_efficientnet(numofepochs, use_subset=False):
 
 if __name__ == "__main__":
     numofepochs = input("Please enter number of Epochs: ")
-    use_subset = input("Use subset of 4 images for training? (y/n): ").lower() == 'y'
-    train_efficientnet(numofepochs, use_subset)
+    subset_size = int(input("Enter subset size (0 = full dataset): "))
+    train_efficientnet(numofepochs, subset_size=subset_size)

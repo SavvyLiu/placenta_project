@@ -40,21 +40,38 @@ def segment_image_smp(arch, model_path, input_image_path, output_mask_path):
         model = ViT_UNet_Flexible(n_classes=1)
     else:
         raise ValueError(f"Unknown architecture: {arch}")
+    
+    # Check if model file exists
+    if not os.path.exists(model_path):
+        raise FileNotFoundError(f"Model file not found: {model_path}")
+    
+    print(f"Loading model from: {model_path}")
     model.load_state_dict(torch.load(model_path, map_location=device))
+    print(f"Model loaded successfully")
     model.to(device)
     model.eval()
 
     # Load and preprocess the image
     img = cv2.imread(input_image_path)
+    if img is None:
+        raise ValueError(f"Could not load image at {input_image_path}")
+    print(f"Loaded image shape: {img.shape}")
     img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     img_rgb = img_rgb.astype(np.float32) / 255.0
+    print(f"Image value range: [{img_rgb.min():.3f}, {img_rgb.max():.3f}]")
     tensor_img = torch.from_numpy(img_rgb).permute(2, 0, 1).unsqueeze(0).to(device)
+    print(f"Input tensor shape: {tensor_img.shape}")
 
     # Inference
     with torch.no_grad():
         output = model(tensor_img)  # shape: (1, 1, H, W)
+        print(f"Raw model output shape: {output.shape}")
+        print(f"Raw output range: [{output.min().item():.3f}, {output.max().item():.3f}]")
         prob_map = torch.sigmoid(output)
+        print(f"After sigmoid range: [{prob_map.min().item():.3f}, {prob_map.max().item():.3f}]")
+        print(f"Pixels > 0.5: {(prob_map > 0.5).sum().item()}")
         mask_pred = (prob_map > 0.5).float().cpu().numpy()[0, 0]
+        print(f"Final mask has {mask_pred.sum()} white pixels")
 
     mask_pred_uint8 = (mask_pred * 255).astype(np.uint8)
 
@@ -169,7 +186,10 @@ def main():
             'vit': 'trained_models/vit_unet_placenta_flexible.pth'
         }
         model_path = os.path.join(project_dir, names[args.arch])
-    ground_truth_path = os.path.join(project_dir, 'data', 'validation', 'ground_truth', os.path.basename(args.input).replace('.png','valid01.png'))  # adjust if needed
+    # Construct ground-truth filename by prefixing 'valid' to the base name
+    base = os.path.splitext(os.path.basename(args.input))[0]
+    gt_filename = f"valid{base}.png"
+    ground_truth_path = os.path.join(project_dir, 'data', 'validation', 'ground_truth', gt_filename)
 
     # Step 1: Segment
     mask = segment_image_smp(args.arch, model_path, args.input, args.output_mask)
