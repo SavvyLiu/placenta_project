@@ -104,5 +104,12 @@ prof/
 .DS_Store
 Thumbs.db
 
-#models
-.pth
+# Models
+*.pth
+# Trained model checkpoints
+trained_models/
+# Raw data (images and masks)
+data/images/
+data/masks/
+# Validation predictions
+data/validation/predictions/

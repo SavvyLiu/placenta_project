@@ -1,10 +1,15 @@
- import cv2
+import cv2
 import torch
 import numpy as np
 import segmentation_models_pytorch as smp
+import os
+import argparse
+from models.efficicentnet_train_smp import EfficientNetUNet
+from models.regnet_train_smp import RegNetUNet
+from models.ViT_train_smp import ViT_UNet_Flexible
 
 
-def segment_image_smp(model_path, input_image_path, output_mask_path):
+def segment_image_smp(arch, model_path, input_image_path, output_mask_path):
     """
     Loads a pretrained segmentation model and uses it to segment the input image.
     The predicted mask is refined with a morphological opening operation.
@@ -19,13 +24,22 @@ def segment_image_smp(model_path, input_image_path, output_mask_path):
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # Initialize the model (U-Net with ResNet34 backbone)
-    model = smp.Unet(
-        encoder_name="resnet34",
-        encoder_weights="imagenet",
-        in_channels=3,
-        classes=1
-    )
+    # Initialize the model based on chosen architecture
+    if arch == 'unet':
+        model = smp.Unet(
+            encoder_name="resnet34",
+            encoder_weights="imagenet",
+            in_channels=3,
+            classes=1
+        )
+    elif arch == 'efficientnet':
+        model = EfficientNetUNet(n_classes=1)
+    elif arch == 'regnet':
+        model = RegNetUNet(n_classes=1)
+    elif arch == 'vit':
+        model = ViT_UNet_Flexible(n_classes=1)
+    else:
+        raise ValueError(f"Unknown architecture: {arch}")
     model.load_state_dict(torch.load(model_path, map_location=device))
     model.to(device)
     model.eval()
@@ -133,22 +147,38 @@ def dice_coefficient(y_true, y_pred):
 
 
 def main():
-    # Define file paths
-    model_path = "smp_unet_placenta.pth"           # Trained model weights
-    input_image_path = "../data/validation/01.png"  # Input histological image
-    ground_truth_path = '../data/validation/ground_truth/valid01.png'
-    output_mask_path = "test_mask_pred.png"          # Where to save the segmentation mask
-    output_annotated_path = "test_image_annotated.jpg"  # Where to save the annotated image
+    parser = argparse.ArgumentParser(description="Segment an image with a chosen placenta model architecture")
+    parser.add_argument("--arch", choices=["unet","efficientnet","regnet","vit"], default="unet")
+    parser.add_argument("--model_path", help="Path to .pth weights file; if omitted, will use trained_models/<arch>*.pth")
+    parser.add_argument("--input", required=True, help="Path to input image")
+    parser.add_argument("--output_mask", required=True, help="Path to save the binary mask")
+    parser.add_argument("--output_annot", required=True, help="Path to save annotated image with contours")
+    args = parser.parse_args()
 
-    # Step 1: Segment the image and save the binary mask
-    mask = segment_image_smp(model_path, input_image_path, output_mask_path)
+    # Infer default model path if not provided
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    project_dir = os.path.dirname(script_dir)
+    if args.model_path:
+        model_path = args.model_path
+    else:
+        # map arch to default filename
+        names = {
+            'unet': 'trained_models/smp_unet_placenta.pth',
+            'efficientnet': 'trained_models/efficientnet_unet_placenta.pth',
+            'regnet': 'trained_models/regnet_unet_placenta.pth',
+            'vit': 'trained_models/vit_unet_placenta_flexible.pth'
+        }
+        model_path = os.path.join(project_dir, names[args.arch])
+    ground_truth_path = os.path.join(project_dir, 'data', 'validation', 'ground_truth', os.path.basename(args.input).replace('.png','valid01.png'))  # adjust if needed
 
-    # Step 2: Draw contours on the image based on the mask.
-    # Set use_bounding_box=True if you prefer bounding boxes.
-    draw_contours_on_masked_image(input_image_path, mask, output_annotated_path, min_area=10, use_bounding_box=False)
-    accuracy(output_mask_path, ground_truth_path)
-    close_open(output_mask_path, ground_truth_path)
-    
+    # Step 1: Segment
+    mask = segment_image_smp(args.arch, model_path, args.input, args.output_mask)
+
+    # Step 2: Draw contours and evaluate
+    draw_contours_on_masked_image(args.input, mask, args.output_annot)
+    accuracy(args.output_mask, ground_truth_path)
+    close_open(args.output_mask, ground_truth_path)
+ 
 def accuracy(output_mask_path, ground_truth_path):
 
     y_true = load_mask(ground_truth_path)

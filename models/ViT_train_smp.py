@@ -2,13 +2,14 @@
 
 # NEEDS REWORKING, DELETE NAWEENS MANUAL IMAGE RESIZING AND JUST CHANGE THE BLOCK SIZE IN MODEL PARAMETERS TO AVOID IMAGE RES NOT BEING PERFECT MULTIPLE OF 16
 
+import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torchvision.models import vit_h_14, ViT_H_14_Weights
 from torch.utils.data import DataLoader
 import segmentation_models_pytorch as smp
-from older_models.PlacentaDataset import PlacentaDataset
+from models.PlacentaDataset import PlacentaDataset
 
 class ViT_UNet_Flexible(nn.Module):
     def __init__(self, n_classes=1, pretrained=True):
@@ -102,14 +103,17 @@ class ViT_UNet_Flexible(nn.Module):
         x_out = self.final_conv(x_dec)
         return x_out[..., :H, :W]
 
-def train_vit(num_epochs: int):
-    images_dir = "../data/images"
-    masks_dir  = "../data/masks"
+def train_vit(num_epochs: int, use_subset=False):
+    # Determine project directories
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    project_dir = os.path.dirname(script_dir)
+    images_dir = os.path.join(project_dir, "data", "images")
+    masks_dir  = os.path.join(project_dir, "data", "masks")
     batch_size = 1
     lr         = 1e-4
     device     = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    ds     = PlacentaDataset(images_dir, masks_dir)
+    ds     = PlacentaDataset(images_dir, masks_dir, use_subset=use_subset)
     loader = DataLoader(ds, batch_size=batch_size, shuffle=True)
 
     model     = ViT_UNet_Flexible(n_classes=1).to(device)
@@ -135,8 +139,12 @@ def train_vit(num_epochs: int):
         print(f"Epoch {epoch+1}/{num_epochs}  Loss={avg:.4f}  Δ={prev-avg:.4f}")
         prev = avg
 
-    torch.save(model.state_dict(), "vit_unet_placenta_flexible.pth")
-    print("Saved vit_unet_placenta_flexible.pth")
+    # ensure trained_models directory exists
+    save_dir = os.path.join(project_dir, "trained_models")
+    os.makedirs(save_dir, exist_ok=True)
+    save_path = os.path.join(save_dir, "vit_unet_placenta_flexible.pth")
+    torch.save(model.state_dict(), save_path)
+    print(f"Saved {save_path}")
 
 if __name__ == "__main__":
     n = int(input("Enter number of epochs: "))

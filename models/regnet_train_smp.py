@@ -5,7 +5,7 @@ from torch.utils.data import DataLoader
 import torchvision
 from torchvision.models import regnet_y_400mf, RegNet_Y_400MF_Weights
 import segmentation_models_pytorch as smp  # still using its loss if desired
-from older_models.PlacentaDataset import PlacentaDataset
+from models.PlacentaDataset import PlacentaDataset
 import os
 
 
@@ -111,8 +111,12 @@ def train_regnet(numofepochs, use_subset=False):
     # -------------------------------------
     # 6. Save the Trained Model
     # -------------------------------------
-    torch.save(model.state_dict(), "regnet_unet_placenta.pth")
-    print("Model saved as regnet_unet_placenta.pth")
+    # ensure trained_models directory exists
+    save_dir = os.path.join(project_dir, "trained_models")
+    os.makedirs(save_dir, exist_ok=True)
+    save_path = os.path.join(save_dir, "regnet_unet_placenta.pth")
+    torch.save(model.state_dict(), save_path)
+    print(f"Model saved as {save_path}")
 
 
 if __name__ == "__main__":
