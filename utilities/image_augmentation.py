@@ -167,19 +167,24 @@ def augment_images():
     project_dir = os.path.dirname(script_dir)
     # Construct paths relative to the project root
     image_dir = os.path.join(project_dir, "data", "images")
+    mask_dir = os.path.join(project_dir, "data", "masks")
     out_dir_images = os.path.join(project_dir, "data", "images")
 
     # Create dataset.
-    dataset = SegmentationDataset(image_dir, image_dir, transform=joint_transform)
+    dataset = SegmentationDataset(image_dir, mask_dir, transform=joint_transform)
 
     # Output directories for augmented results.
     out_dir_masks = os.path.join(project_dir, "data", "masks")
 
-    # Process every item in the dataset.
-    for idx in range(len(dataset)):
-        image, mask = dataset[idx]
-        prefix = f'augment_{idx:02d}'
-        save_augmented(image, mask, out_dir_images, out_dir_masks, prefix)
+    repetitions = input("How many repeitions is needed: ")
+
+    for reps in range(int(repetitions)):
+        # Process every item in the dataset.
+        for idx in range(len(dataset)):
+            image, mask = dataset[idx]
+            prefix = f'augment_{idx:02d}'
+            save_augmented(image, mask, out_dir_images, out_dir_masks, prefix)
+    
 
 
 if __name__ == '__main__':

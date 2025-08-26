@@ -47,7 +47,7 @@ class EfficientNetUNet(nn.Module):
         return x
 
 
-def train_efficientnet(numofepochs, subset_size=0, lr_patience=5, lr_factor=0.5):
+def train_efficientnet(numofepochs, subset_size=0):
     # -------------------------------------
     # 1. Hyperparameters & Setup
     # -------------------------------------
@@ -86,9 +86,6 @@ def train_efficientnet(numofepochs, subset_size=0, lr_patience=5, lr_factor=0.5)
         return bce_loss(pred, target) + dice_loss(pred, target)
 
     optimizer = optim.Adam(model.parameters(), lr=lr)
-    
-    # Add learning rate scheduler
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=lr_patience, factor=lr_factor)
 
     # -------------------------------------
     # 5. Training Loop
@@ -111,28 +108,22 @@ def train_efficientnet(numofepochs, subset_size=0, lr_patience=5, lr_factor=0.5)
             epoch_loss += loss.item() * images.size(0)
 
         epoch_loss /= len(dataset)
-        
-        # Step the scheduler
-        scheduler.step(epoch_loss)
-        current_lr = optimizer.param_groups[0]['lr']
         print(f"Epoch [{epoch + 1}/{num_epochs}], Loss: {epoch_loss:.4f}, Improvement: {prev_loss - epoch_loss:.4f}")
-        if epoch > 0:
-            print(f"  LR: {current_lr:.6f}")
 
-    # -------------------------------------
-    # 6. Save the Trained Model
-    # -------------------------------------
-    # ensure trained_models directory exists
-    save_dir = os.path.join(project_dir, "trained_models")
-    os.makedirs(save_dir, exist_ok=True)
-    save_path = os.path.join(save_dir, "efficientnet_unet_placenta.pth")
-    torch.save(model.state_dict(), save_path)
-    print(f"Model saved as {save_path}")
+        # every 100 epochs, save a new checkpoint with an incrementing index
+        if (epoch + 1) % 100 == 0:
+            save_idx = 4
+            # ensure the output directory exists
+            save_dir = os.path.join(project_dir, "trained_models")
+            os.makedirs(save_dir, exist_ok=True)
+            # build filename with index: efficientnet_unet_placenta_1.pth, _2.pth, etc.
+            filename = f"efficientnet_unet_placenta_{save_idx}.pth"
+            save_path = os.path.join(save_dir, filename)
+            torch.save(model.state_dict(), save_path)
+            print(f"Model checkpoint saved as {filename}")
 
 
 if __name__ == "__main__":
     numofepochs = input("Please enter number of Epochs: ")
     subset_size = int(input("Enter subset size (0 = full dataset): "))
-    lr_patience = int(input("Enter LR scheduler patience (default 5): ") or "5")
-    lr_factor = float(input("Enter LR reduction factor (default 0.5): ") or "0.5")
-    train_efficientnet(numofepochs, subset_size=subset_size, lr_patience=lr_patience, lr_factor=lr_factor)
+    train_efficientnet(numofepochs, subset_size=subset_size)

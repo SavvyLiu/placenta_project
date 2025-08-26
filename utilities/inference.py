@@ -190,14 +190,21 @@ def main():
     base = os.path.splitext(os.path.basename(args.input))[0]
     gt_filename = f"valid{base}.png"
     ground_truth_path = os.path.join(project_dir, 'data', 'validation', 'ground_truth', gt_filename)
+    print("GROUND TRUTH PATH" + ground_truth_path)
 
     # Step 1: Segment
     mask = segment_image_smp(args.arch, model_path, args.input, args.output_mask)
 
-    # Step 2: Draw contours and evaluate
+    # Step 2: Draw contours
     draw_contours_on_masked_image(args.input, mask, args.output_annot)
-    accuracy(args.output_mask, ground_truth_path)
-    close_open(args.output_mask, ground_truth_path)
+
+    # only run metrics if the GT file actually exists
+    if os.path.isfile(ground_truth_path):
+        accuracy(args.output_mask, ground_truth_path)
+        close_open(args.output_mask, ground_truth_path)
+    else:
+        print(f"[INFO] No ground truth found at {ground_truth_path}, skipping evaluation.")
+
  
 def accuracy(output_mask_path, ground_truth_path):
 

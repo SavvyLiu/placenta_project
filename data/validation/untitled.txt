@@ -1,0 +1,6 @@
+python3 -m utilities.inference \
+  --arch efficientnet \
+  --model_path trained_models/efficientnet_unet_placenta.pth \
+  --input data/validation/02.png \
+  --output_mask data/validation/predictions/02_mask_eff.png \
+  --output_annot data/validation/predictions/02_annot_eff.png

@@ -38,10 +38,11 @@ The purpose of this project is to apply machine learning techniques to automate 
 1. Run segmentation on a new image:
    ```cmd
    python -m utilities.inference \
-     --arch regnet \
-     --input data/validation/01.png \
-     --output_mask results/01_mask.png \
-     --output_annot results/01_annot.png
+     --arch efficientnet \
+     --model_path trained_models/efficientnet_unet_placenta.pth \
+     --input data/validation/test1.png \
+     --output_mask results/test1_mask.png \
+     --output_annot results/test1_annot.png
    ```
    - If `--model_path` is omitted, the script uses the corresponding file in `trained_models/`.
 2. The script saves:

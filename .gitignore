@@ -113,3 +113,4 @@ data/images/
 data/masks/
 # Validation predictions
 data/validation/predictions/
+*.png
