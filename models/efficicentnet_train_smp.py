@@ -2,10 +2,18 @@ import os
 import torch
 import torch.optim as optim
 import torch.nn as nn
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, random_split
 import torchvision
 import segmentation_models_pytorch as smp  # still using its loss if desired
 from models.PlacentaDataset import PlacentaDataset
+import logging
+
+# Set up logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 
 # Define a custom U-Net using EfficientNet_V2_L as the encoder.
@@ -47,7 +55,7 @@ class EfficientNetUNet(nn.Module):
         return x
 
 
-def train_efficientnet(numofepochs, subset_size=0):
+def train_efficientnet(numofepochs, subset_size=0, lr_patience=5, lr_factor=0.5):
     # -------------------------------------
     # 1. Hyperparameters & Setup
     # -------------------------------------
@@ -62,68 +70,115 @@ def train_efficientnet(numofepochs, subset_size=0):
     num_epochs = int(numofepochs)
     lr = 1e-4
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
+    logger.info(f"Using device: {device}")
 
     # -------------------------------------
     # 2. Create Dataset & DataLoader
     # -------------------------------------
     dataset = PlacentaDataset(images_dir, masks_dir, subset_size=subset_size)
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    
+    # Split into train and validation (80-20 split)
+    train_size = int(0.8 * len(dataset))
+    val_size = len(dataset) - train_size
+    train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
+    
+    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+    
+    logger.info(f"Dataset: {len(dataset)} total, {train_size} train, {val_size} val")
 
     # -------------------------------------
     # 3. Instantiate the Model with the new backbone
+    # 3-class segmentation: Background, Fetal, Maternal
     # -------------------------------------
-    model = EfficientNetUNet(n_classes=1)
+    model = EfficientNetUNet(n_classes=3)
     model.to(device)
 
     # -------------------------------------
     # 4. Define Loss and Optimizer
     # -------------------------------------
-    # Using a combination of Dice Loss and Binary Cross-Entropy Loss.
-    dice_loss = smp.losses.DiceLoss(mode='binary')
-    bce_loss = nn.BCEWithLogitsLoss()
+    # Use CrossEntropyLoss for multi-class segmentation
+    # Combined with Dice Loss for better segmentation quality
+    ce_loss = nn.CrossEntropyLoss(ignore_index=0)  # ignore background class
+    dice_loss = smp.losses.DiceLoss(mode='multiclass', classes=3)
 
     def combined_loss(pred, target):
-        return bce_loss(pred, target) + dice_loss(pred, target)
+        # pred shape: (B, 3, H, W)
+        # target shape: (B, H, W) with values 0, 1, 2
+        ce = ce_loss(pred, target)
+        dice = dice_loss(pred, target)
+        return ce + dice
 
     optimizer = optim.Adam(model.parameters(), lr=lr)
+    
+    # Add learning rate scheduler
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=lr_patience, factor=lr_factor)
+    
+    # Validation function
+    def validate(model, val_loader, device):
+        model.eval()
+        val_loss = 0.0
+        with torch.no_grad():
+            for images, masks in val_loader:
+                images = images.to(device)
+                masks = masks.to(device)
+                outputs = model(images)
+                loss = combined_loss(outputs, masks)
+                val_loss += loss.item() * images.size(0)
+        
+        val_loss /= val_size
+        return val_loss
 
     # -------------------------------------
     # 5. Training Loop
     # -------------------------------------
+    best_val_loss = float('inf')
     epoch_loss = 5.0
     for epoch in range(num_epochs):
-        prev_loss = epoch_loss
         model.train()
         epoch_loss = 0.0
-        for images, masks in dataloader:
+        for images, masks in train_dataloader:
             images = images.to(device)
             masks = masks.to(device)
 
             optimizer.zero_grad()
-            outputs = model(images)  # shape: (B, 1, H, W)
+            outputs = model(images)  # shape: (B, 3, H, W)
             loss = combined_loss(outputs, masks)
             loss.backward()
             optimizer.step()
 
             epoch_loss += loss.item() * images.size(0)
 
-        epoch_loss /= len(dataset)
-        print(f"Epoch [{epoch + 1}/{num_epochs}], Loss: {epoch_loss:.4f}, Improvement: {prev_loss - epoch_loss:.4f}")
+        epoch_loss /= train_size
+        
+        # Validate
+        val_loss = validate(model, val_dataloader, device)
+        
+        # Step the scheduler
+        scheduler.step(val_loss)
+        current_lr = optimizer.param_groups[0]['lr']
+        logger.info(f"Epoch [{epoch + 1}/{num_epochs}], Train Loss: {epoch_loss:.4f}, Val Loss: {val_loss:.4f}, LR: {current_lr:.6f}")
+        
+        # Track best validation loss
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            logger.info(f"  -> New best validation loss: {best_val_loss:.4f}")
 
-        # every 100 epochs, save a new checkpoint with an incrementing index
-        if (epoch + 1) % 100 == 0:
-            save_idx = 4
-            # ensure the output directory exists
-            save_dir = os.path.join(project_dir, "trained_models")
-            os.makedirs(save_dir, exist_ok=True)
-            # build filename with index: efficientnet_unet_placenta_1.pth, _2.pth, etc.
-            filename = f"efficientnet_unet_placenta_{save_idx}.pth"
-            save_path = os.path.join(save_dir, filename)
-            torch.save(model.state_dict(), save_path)
-            print(f"Model checkpoint saved as {filename}")
+    # -------------------------------------
+    # 6. Save the Trained Model
+    # -------------------------------------
+    # ensure trained_models directory exists
+    save_dir = os.path.join(project_dir, "trained_models")
+    os.makedirs(save_dir, exist_ok=True)
+    save_path = os.path.join(save_dir, "efficientnet_unet_placenta.pth")
+    torch.save(model.state_dict(), save_path)
+    logger.info(f"Model saved as {save_path}")
 
 
 if __name__ == "__main__":
     numofepochs = input("Please enter number of Epochs: ")
-    subset_size = int(input("Enter subset size (0 = full dataset): "))
-    train_efficientnet(numofepochs, subset_size=subset_size)
+    subset_size = int(input("Enter subset size (0 = full dataset): ") or "0")
+    lr_patience = int(input("Enter LR scheduler patience (default 5): ") or "5")
+    lr_factor = float(input("Enter LR reduction factor (default 0.5): ") or "0.5")
+    train_efficientnet(numofepochs, subset_size=subset_size, lr_patience=lr_patience, lr_factor=lr_factor)

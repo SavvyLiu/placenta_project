@@ -7,6 +7,12 @@ from torch.utils.data import Dataset
 from torchvision.transforms.v2 import ColorJitter, InterpolationMode
 import torchvision.transforms.functional as TF
 
+# Optional: Import config for programmatic usage
+try:
+    from utilities.config import AugmentationConfig
+except ImportError:
+    AugmentationConfig = None
+
 
 # -------------------------------------------------------------------
 # Custom Joint Random Affine Transformation
@@ -72,10 +78,34 @@ class JointRandomAffine:
 # Custom Joint Augmentation combining JointRandomAffine with ColorJitter
 # -------------------------------------------------------------------
 class CustomJointAugment:
-    def __init__(self, affine_params=None, color_jitter_params=None):
-        if affine_params is None:
+    def __init__(self, affine_params=None, color_jitter_params=None, config=None):
+        """
+        Initialize joint augmentation.
+        
+        Args:
+            affine_params: Dict of affine parameters (used if config is None)
+            color_jitter_params: Dict of color jitter parameters (used if config is None)
+            config: Optional AugmentationConfig instance (takes precedence)
+        """
+        if config is not None and AugmentationConfig is not None:
+            # Use config if provided
+            affine_params = {
+                "degrees": config.rotation_degrees,
+                "translate": config.translation,
+                "scale": config.scale_range,
+                "shear": config.shear_degrees
+            }
+            color_jitter_params = {
+                "brightness": config.brightness,
+                "contrast": config.contrast,
+                "saturation": config.saturation,
+                "hue": config.hue
+            }
+        elif affine_params is None:
             affine_params = {"degrees": 30, "translate": (0.1, 0.1), "scale": (0.9, 1.1), "shear": 10}
+        
         self.joint_affine = JointRandomAffine(**affine_params)
+        
         if color_jitter_params is None:
             # Adjust these parameters to get desired photometric variability.
             color_jitter_params = {"brightness": 0.5, "contrast": 0.5, "saturation": 0.5, "hue": 0.2}
@@ -142,6 +172,7 @@ class SegmentationDataset(Dataset):
 # The outputs will be saved in "data/augment_01/images" and "data/augment_01/masks".
 # -------------------------------------------------------------------
 def save_augmented(image: torch.Tensor, mask: torch.Tensor, out_dir_images, out_dir_masks, prefix):
+    """Save augmented image and mask to disk."""
     os.makedirs(out_dir_images, exist_ok=True)
     os.makedirs(out_dir_masks, exist_ok=True)
 
@@ -160,32 +191,118 @@ def save_augmented(image: torch.Tensor, mask: torch.Tensor, out_dir_images, out_
     print(f"Augmented mask saved to: {mask_path}")
 
 
-def augment_images():
-    # Get the directory where the script is located
+def augment_images(
+    num_repetitions: int = 1,
+    image_dir: str = None,
+    mask_dir: str = None,
+    output_dir: str = None,
+    prefix: str = 'augment',
+    config = None
+):
+    """
+    Augment images and masks with random transformations.
+    
+    Args:
+        num_repetitions: Number of times to augment each image
+        image_dir: Directory containing images (uses default if None)
+        mask_dir: Directory containing masks (uses default if None)
+        output_dir: Directory to save augmented images/masks (uses default if None)
+        prefix: Prefix for augmented filenames
+        config: Optional AugmentationConfig instance (overrides other parameters)
+    """
+    # Use config if provided
+    if config is not None and AugmentationConfig is not None:
+        num_repetitions = config.num_repetitions
+        prefix = config.prefix
+        if config.output_dir:
+            output_dir = config.output_dir
+    
+    # Get project root if directories not specified
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    # Go up one level to the project root
     project_dir = os.path.dirname(script_dir)
-    # Construct paths relative to the project root
-    image_dir = os.path.join(project_dir, "data", "images")
-    mask_dir = os.path.join(project_dir, "data", "masks")
-    out_dir_images = os.path.join(project_dir, "data", "images")
-
-    # Create dataset.
+    
+    if image_dir is None:
+        image_dir = os.path.join(project_dir, "data", "images")
+    if mask_dir is None:
+        mask_dir = os.path.join(project_dir, "data", "masks")
+    if output_dir is None:
+        output_dir = os.path.join(project_dir, "data")
+    
+    out_dir_images = os.path.join(output_dir, "images")
+    out_dir_masks = os.path.join(output_dir, "masks")
+    
+    # Verify directories exist
+    if not os.path.isdir(image_dir):
+        raise ValueError(f"Image directory not found: {image_dir}")
+    if not os.path.isdir(mask_dir):
+        raise ValueError(f"Mask directory not found: {mask_dir}")
+    
+    # Create dataset
     dataset = SegmentationDataset(image_dir, mask_dir, transform=joint_transform)
+    print(f"Loaded dataset with {len(dataset)} image-mask pairs")
 
-    # Output directories for augmented results.
-    out_dir_masks = os.path.join(project_dir, "data", "masks")
-
-    repetitions = input("How many repeitions is needed: ")
-
-    for reps in range(int(repetitions)):
-        # Process every item in the dataset.
+    # Generate augmented data
+    total_generated = 0
+    for rep_idx in range(num_repetitions):
+        print(f"\nAugmentation pass {rep_idx + 1}/{num_repetitions}")
         for idx in range(len(dataset)):
             image, mask = dataset[idx]
-            prefix = f'augment_{idx:02d}'
-            save_augmented(image, mask, out_dir_images, out_dir_masks, prefix)
+            # Use repetition index and sample index in filename to avoid overwrites
+            aug_prefix = f'{prefix}_rep{rep_idx:02d}_sample{idx:02d}'
+            save_augmented(image, mask, out_dir_images, out_dir_masks, aug_prefix)
+            total_generated += 1
     
+    print(f"\nAugmentation complete! Generated {total_generated} augmented image-mask pairs")
+
+
+def main():
+    import argparse
+    
+    parser = argparse.ArgumentParser(
+        description="Augment image and mask datasets with random transformations"
+    )
+    parser.add_argument(
+        '--repetitions', '-r',
+        type=int,
+        default=1,
+        help='Number of augmentation repetitions per image (default: 1)'
+    )
+    parser.add_argument(
+        '--image-dir',
+        help='Directory containing original images (default: data/images)'
+    )
+    parser.add_argument(
+        '--mask-dir',
+        help='Directory containing original masks (default: data/masks)'
+    )
+    parser.add_argument(
+        '--output-dir',
+        help='Directory to save augmented images/masks (default: data/)'
+    )
+    parser.add_argument(
+        '--prefix',
+        default='augment',
+        help='Prefix for augmented filenames (default: augment)'
+    )
+    
+    args = parser.parse_args()
+    
+    try:
+        augment_images(
+            num_repetitions=args.repetitions,
+            image_dir=args.image_dir,
+            mask_dir=args.mask_dir,
+            output_dir=args.output_dir,
+            prefix=args.prefix
+        )
+        return 0
+    except Exception as e:
+        print(f"Error: {e}", file=sys.__stderr__)
+        import traceback
+        traceback.print_exc()
+        return 1
 
 
 if __name__ == '__main__':
-    augment_images()
+    import sys
+    sys.exit(main())

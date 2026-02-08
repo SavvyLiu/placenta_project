@@ -56,15 +56,18 @@ class PlacentaDataset(Dataset):
         
         # Load mask
         mask_path = os.path.join(self.masks_dir, mask_filename)
-        mask = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)  # shape: (H, W)
+        mask = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)  # shape: (H, W), values: 0, 1, 2
         
         # Check if mask was loaded successfully
         if mask is None:
             raise ValueError(f"Failed to load mask: {mask_path}")
         
-        # Convert to numpy float32, scale to [0,1]
+        # Convert image to float32 and normalize to [0, 1]
         img = img.astype(np.float32) / 255.0
-        mask = mask.astype(np.float32) / 255.0
+        
+        # For multi-class segmentation, keep mask as int64 (class indices)
+        # Mask values should be 0 (background), 1 (fetal), 2 (maternal)
+        mask = mask.astype(np.int64)
         
         # (Optional) transform: data augmentation, resizing, etc.
         if self.transform is not None:
@@ -76,6 +79,6 @@ class PlacentaDataset(Dataset):
         # Convert to Torch Tensors
         # For segmentation, we typically have shape (C, H, W)
         img = torch.from_numpy(img).permute(2, 0, 1)  # (3, H, W)
-        mask = torch.from_numpy(mask).unsqueeze(0)    # (1, H, W)
+        mask = torch.from_numpy(mask)    # (H, W) - CrossEntropyLoss expects this shape
         
         return img, mask

@@ -46,7 +46,7 @@ def main():
         print(f"\n=== Training {m} ===")
         if m == "efficientnet":
             # train_efficientnet expects (numofepochs: str, subset_size: int, lr_patience: int, lr_factor: float)
-            train_efficientnet(str(args.epochs), subset_size=args.subset_size)
+            train_efficientnet(str(args.epochs), subset_size=args.subset_size, lr_patience=args.lr_patience, lr_factor=args.lr_factor)
         elif m == "regnet":
             # train_regnet(numofepochs: str, subset_size: int, lr_patience: int, lr_factor: float)
             train_regnet(str(args.epochs), subset_size=args.subset_size, lr_patience=args.lr_patience, lr_factor=args.lr_factor)
