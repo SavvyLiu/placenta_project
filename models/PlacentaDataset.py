@@ -2,13 +2,31 @@ import os
 import cv2
 import torch
 import numpy as np
+import random
 from torch.utils.data import Dataset
+import torchvision.transforms.functional as TF
+from torchvision.transforms.v2 import ColorJitter, InterpolationMode
 
 class PlacentaDataset(Dataset):
-    def __init__(self, images_dir, masks_dir, transform=None, subset_size=0):
+    def __init__(self, images_dir, masks_dir, transform=None, subset_size=0, augment=False, augment_config=None):
         self.images_dir = images_dir
         self.masks_dir = masks_dir
         self.transform = transform
+        self.augment = augment
+        
+        # On-the-fly augmentation parameters
+        if augment_config is None:
+            augment_config = {
+                'rotation_degrees': 30,
+                'translation': (0.1, 0.1),
+                'scale_range': (0.9, 1.1),
+                'shear_degrees': 10,
+                'brightness': 0.3,
+                'contrast': 0.3,
+                'saturation': 0.3,
+                'hue': 0.1
+            }
+        self.augment_config = augment_config
         
         # Get all image and mask files
         self.image_files = sorted([f for f in os.listdir(images_dir) if f.endswith(('.png', '.TIF', '.tif'))])
@@ -80,5 +98,48 @@ class PlacentaDataset(Dataset):
         # For segmentation, we typically have shape (C, H, W)
         img = torch.from_numpy(img).permute(2, 0, 1)  # (3, H, W)
         mask = torch.from_numpy(mask)    # (H, W) - CrossEntropyLoss expects this shape
+        
+        # On-the-fly augmentation
+        if self.augment:
+            img, mask = self._apply_augmentation(img, mask)
+        
+        return img, mask
+    
+    def _apply_augmentation(self, img, mask):
+        """Apply random affine and color jitter augmentation."""
+        cfg = self.augment_config
+        
+        # Random affine transformation
+        angle = random.uniform(-cfg['rotation_degrees'], cfg['rotation_degrees'])
+        max_dx = cfg['translation'][0] * img.shape[2]
+        max_dy = cfg['translation'][1] * img.shape[1]
+        translations = (random.uniform(-max_dx, max_dx), random.uniform(-max_dy, max_dy))
+        scale_factor = random.uniform(cfg['scale_range'][0], cfg['scale_range'][1])
+        shear_angle = random.uniform(-cfg['shear_degrees'], cfg['shear_degrees'])
+        
+        # Apply affine to image
+        img = TF.affine(
+            img, angle=angle, translate=translations,
+            scale=scale_factor, shear=shear_angle,
+            interpolation=InterpolationMode.BILINEAR
+        )
+        
+        # Apply same affine to mask
+        mask_float = mask.float().unsqueeze(0)  # Add channel dimension
+        mask_float = TF.affine(
+            mask_float, angle=angle, translate=translations,
+            scale=scale_factor, shear=shear_angle,
+            interpolation=InterpolationMode.NEAREST
+        )
+        mask = mask_float.squeeze(0).round().to(torch.int64)
+        
+        # Apply color jitter only to image
+        color_jitter = ColorJitter(
+            brightness=cfg['brightness'],
+            contrast=cfg['contrast'],
+            saturation=cfg['saturation'],
+            hue=cfg['hue']
+        )
+        img = color_jitter(img)
         
         return img, mask

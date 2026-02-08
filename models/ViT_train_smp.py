@@ -2,10 +2,12 @@ import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.cuda.amp import autocast, GradScaler
 from torchvision.models import vit_h_14, ViT_H_14_Weights
 from torch.utils.data import DataLoader, random_split
 import segmentation_models_pytorch as smp
 from models.PlacentaDataset import PlacentaDataset
+from utilities.metrics import SegmentationMetrics
 import logging
 
 # Set up logging
@@ -107,27 +109,27 @@ class ViT_UNet_Flexible(nn.Module):
         x_out = self.final_conv(x_dec)
         return x_out[..., :H, :W]
 
-def train_vit(num_epochs: int, subset_size=0, lr_patience=5, lr_factor=0.5):
+def train_vit(num_epochs: int, subset_size=0, lr_patience=5, lr_factor=0.5, batch_size=16, augment=True, early_stopping_patience=10):
     # Determine project directories
     script_dir = os.path.dirname(os.path.abspath(__file__))
     project_dir = os.path.dirname(script_dir)
     images_dir = os.path.join(project_dir, "data", "images")
     masks_dir  = os.path.join(project_dir, "data", "masks")
-    batch_size = 1
     lr         = 1e-4
     device     = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     logger.info(f"Using device: {device}")
+    logger.info(f"Batch size: {batch_size}, Augmentation: {augment}, Early Stopping Patience: {early_stopping_patience}")
 
-    ds = PlacentaDataset(images_dir, masks_dir, subset_size=subset_size)
+    ds = PlacentaDataset(images_dir, masks_dir, subset_size=subset_size, augment=augment)
     
     # Split into train and validation (80-20 split)
     train_size = int(0.8 * len(ds))
     val_size = len(ds) - train_size
     train_dataset, val_dataset = random_split(ds, [train_size, val_size])
     
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=True)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=4, pin_memory=True)
     
     logger.info(f"Dataset: {len(ds)} total, {train_size} train, {val_size} val")
 
@@ -139,62 +141,121 @@ def train_vit(num_epochs: int, subset_size=0, lr_patience=5, lr_factor=0.5):
 
     # Add learning rate scheduler
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, 'min', patience=lr_patience, factor=lr_factor)
+    scaler = GradScaler()  # For mixed precision training
+    
+    # Metrics tracker
+    metrics_tracker = SegmentationMetrics(num_classes=3, class_names={0: 'background', 1: 'fetal', 2: 'maternal'})
     
     # Validation function
     def validate(model, val_loader, device):
         model.eval()
         val_loss = 0.0
+        all_preds = []
+        all_targets = []
+        
         with torch.no_grad():
             for imgs, masks in val_loader:
                 imgs, masks = imgs.to(device), masks.to(device)
-                preds = model(imgs)
-                loss = loss_fn(preds, masks)
+                
+                with autocast():  # Mixed precision inference
+                    preds = model(imgs)
+                    loss = loss_fn(preds, masks)
+                
                 val_loss += loss.item() * imgs.size(0)
+                all_preds.append(torch.argmax(preds, dim=1).cpu())
+                all_targets.append(masks.cpu())
         
         val_loss /= val_size
-        return val_loss
+        
+        # Compute metrics
+        all_preds = torch.cat(all_preds, dim=0)
+        all_targets = torch.cat(all_targets, dim=0)
+        metrics = metrics_tracker.compute_all(all_preds, all_targets)
+        
+        return val_loss, metrics
 
     best_val_loss = float('inf')
-    prev = float("inf")
+    patience_counter = 0
+    
+    logger.info("Starting training...")
     for epoch in range(num_epochs):
         model.train()
         total = 0.0
         for imgs, masks in train_loader:
             imgs, masks = imgs.to(device), masks.to(device)
             opt.zero_grad()
-            preds = model(imgs)
-            loss  = loss_fn(preds, masks)
-            loss.backward()
-            opt.step()
+            
+            # Mixed precision training
+            with autocast():
+                preds = model(imgs)
+                loss  = loss_fn(preds, masks)
+            
+            scaler.scale(loss).backward()
+            scaler.step(opt)
+            scaler.update()
+            
             total += loss.item() * imgs.size(0)
 
         avg = total / train_size
         
         # Validate
-        val_loss = validate(model, val_loader, device)
-        
-        # Step the scheduler
+        val_loss, val_metrics = validate(model, val_loader, device)
         scheduler.step(val_loss)
         current_lr = opt.param_groups[0]['lr']
-        logger.info(f"Epoch {epoch+1}/{num_epochs}  Train Loss={avg:.4f}  Val Loss={val_loss:.4f}  LR={current_lr:.6f}")
         
-        # Track best validation loss
+        # Logging
+        logger.info(f"Epoch [{epoch+1}/{num_epochs}], Train Loss: {avg:.4f}, Val Loss: {val_loss:.4f}, LR: {current_lr:.6f}")
+        logger.info(f"  Val IoU (mean): {val_metrics['iou']['mean_iou']:.4f}, Val Dice (mean): {val_metrics['dice']['mean_dice']:.4f}")
+        logger.info(f"  Per-class - IoU: {val_metrics['iou']}")
+        logger.info(f"  Per-class - Dice: {val_metrics['dice']}")
+        
+        # Track best validation loss and save checkpoint
         if val_loss < best_val_loss:
             best_val_loss = val_loss
-            logger.info(f"  -> New best validation loss: {best_val_loss:.4f}")
-        
-        prev = avg
+            patience_counter = 0
+            logger.info(f"  ✓ New best validation loss: {best_val_loss:.4f}")
+            
+            # Save best model
+            save_dir = os.path.join(project_dir, "trained_models")
+            os.makedirs(save_dir, exist_ok=True)
+            save_path = os.path.join(save_dir, "vit_unet_placenta_flexible_best.pth")
+            torch.save(model.state_dict(), save_path)
+            logger.info(f"  ✓ Best model saved to {save_path}")
+        else:
+            patience_counter += 1
+            logger.info(f"  ✗ No improvement. Patience: {patience_counter}/{early_stopping_patience}")
+            
+            if patience_counter >= early_stopping_patience:
+                logger.info(f"Early stopping triggered after {epoch + 1} epochs!")
+                break
 
-    # ensure trained_models directory exists
+    # Save final model
     save_dir = os.path.join(project_dir, "trained_models")
     os.makedirs(save_dir, exist_ok=True)
-    save_path = os.path.join(save_dir, "vit_unet_placenta_flexible.pth")
+    save_path = os.path.join(save_dir, "vit_unet_placenta_flexible_final.pth")
     torch.save(model.state_dict(), save_path)
-    logger.info(f"Saved {save_path}")
+    logger.info(f"Final model saved as {save_path}")
+    logger.info(f"Training completed! Best validation loss: {best_val_loss:.4f}")
 
 if __name__ == "__main__":
-    n = int(input("Enter number of epochs: "))
-    subset_size = int(input("Enter subset size (0 = full dataset): ") or "0")
-    lr_patience = int(input("Enter LR scheduler patience (default 5): ") or "5")
-    lr_factor = float(input("Enter LR reduction factor (default 0.5): ") or "0.5")
-    train_vit(n, subset_size=subset_size, lr_patience=lr_patience, lr_factor=lr_factor)
+    import argparse
+    parser = argparse.ArgumentParser(description="Train Vision Transformer U-Net for 3-class placenta segmentation")
+    parser.add_argument("--epochs", type=int, default=50, help="Number of training epochs")
+    parser.add_argument("--batch-size", type=int, default=16, help="Batch size (A40: default 16)")
+    parser.add_argument("--subset-size", type=int, default=0, help="Subset size (0 = full dataset)")
+    parser.add_argument("--lr-patience", type=int, default=5, help="Learning rate scheduler patience")
+    parser.add_argument("--lr-factor", type=float, default=0.5, help="Learning rate reduction factor")
+    parser.add_argument("--augment", action="store_true", default=True, help="Apply on-the-fly augmentation")
+    parser.add_argument("--no-augment", dest="augment", action="store_false", help="Disable augmentation")
+    parser.add_argument("--early-stopping-patience", type=int, default=10, help="Early stopping patience")
+    
+    args = parser.parse_args()
+    train_vit(
+        args.epochs, 
+        subset_size=args.subset_size, 
+        lr_patience=args.lr_patience, 
+        lr_factor=args.lr_factor,
+        batch_size=args.batch_size,
+        augment=args.augment,
+        early_stopping_patience=args.early_stopping_patience
+    )
