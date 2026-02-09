@@ -78,7 +78,8 @@ def train_efficientnet(numofepochs, subset_size=0, lr_patience=5, lr_factor=0.5,
     # -------------------------------------
     # 2. Create Dataset & DataLoader
     # -------------------------------------
-    dataset = PlacentaDataset(images_dir, masks_dir, subset_size=subset_size, augment=augment)
+    # Use target_size=512 to reduce memory usage (especially for large TIF files)
+    dataset = PlacentaDataset(images_dir, masks_dir, subset_size=subset_size, augment=augment, target_size=512)
     
     # Split into train and validation (80-20 split)
     train_size = int(0.8 * len(dataset))

@@ -8,11 +8,12 @@ import torchvision.transforms.functional as TF
 from torchvision.transforms.v2 import ColorJitter, InterpolationMode
 
 class PlacentaDataset(Dataset):
-    def __init__(self, images_dir, masks_dir, transform=None, subset_size=0, augment=False, augment_config=None):
+    def __init__(self, images_dir, masks_dir, transform=None, subset_size=0, augment=False, augment_config=None, target_size=512):
         self.images_dir = images_dir
         self.masks_dir = masks_dir
         self.transform = transform
         self.augment = augment
+        self.target_size = target_size  # Resize images to this size to reduce memory
         
         # On-the-fly augmentation parameters
         if augment_config is None:
@@ -79,6 +80,11 @@ class PlacentaDataset(Dataset):
         # Check if mask was loaded successfully
         if mask is None:
             raise ValueError(f"Failed to load mask: {mask_path}")
+        
+        # RESIZE to reduce memory usage (especially important for large TIF files)
+        if self.target_size:
+            img = cv2.resize(img, (self.target_size, self.target_size), interpolation=cv2.INTER_AREA)
+            mask = cv2.resize(mask, (self.target_size, self.target_size), interpolation=cv2.INTER_NEAREST)
         
         # Convert image to float32 and normalize to [0, 1]
         img = img.astype(np.float32) / 255.0
