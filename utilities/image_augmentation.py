@@ -159,26 +159,39 @@ class SegmentationDataset(Dataset):
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB).astype('float32') / 255.0
         image = torch.from_numpy(image).permute(2, 0, 1)
 
-        # Read the mask.
-        mask = cv2.imread(self.mask_paths[idx], cv2.IMREAD_GRAYSCALE)
+        # Read the mask - try color first to be flexible with formats
+        mask = cv2.imread(self.mask_paths[idx], cv2.IMREAD_COLOR)
         if mask is None:
             raise ValueError(f"Mask not found: {self.mask_paths[idx]}")
         
-        # NORMALIZE MASK VALUES TO 0, 1, 2 (in case they're stored as 0, 85, 170, 255, etc.)
-        unique_values = np.unique(mask)
-        if len(unique_values) <= 3:
-            # Map unique values to 0, 1, 2
-            value_map = {val: idx for idx, val in enumerate(sorted(unique_values))}
-            mask_normalized = np.zeros_like(mask)
-            for old_val, new_val in value_map.items():
-                mask_normalized[mask == old_val] = new_val
-            mask = mask_normalized.astype(np.int64)
-        else:
-            # If more than 3 values, use quantization
-            mask = (mask / 255.0 * 2).astype(np.int64)  # Scale 0-255 to 0-2
-            mask = np.clip(mask, 0, 2)  # Ensure values are in [0, 2]
+        # Convert to grayscale if needed
+        if len(mask.shape) == 3 and mask.shape[2] == 3:
+            if np.allclose(mask[:,:,0], mask[:,:,1]) and np.allclose(mask[:,:,1], mask[:,:,2]):
+                mask = mask[:,:,0]  # Take first channel
+            else:
+                mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
+        elif len(mask.shape) == 3:
+            mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
         
-        mask = torch.from_numpy(mask).to(torch.int64)
+        # NORMALIZE MASK VALUES TO 0, 1, 2
+        unique_vals = np.unique(mask)
+        if len(unique_vals) <= 3:
+            sorted_vals = sorted(unique_vals)
+            for new_idx, old_val in enumerate(sorted_vals):
+                if new_idx >= 3:
+                    break
+                mask[mask == old_val] = 255 + new_idx
+            
+            for new_idx, old_val in enumerate(sorted_vals[:3]):
+                mask[mask == 255 + new_idx] = new_idx
+        else:
+            mask_normalized = np.zeros_like(mask, dtype=np.int64)
+            mask_normalized[mask < 85] = 0
+            mask_normalized[(mask >= 85) & (mask < 170)] = 1
+            mask_normalized[mask >= 170] = 2
+            mask = mask_normalized
+        
+        mask = torch.from_numpy(mask.astype(np.int64)).to(torch.int64)
         # Ensure mask has a channel dimension.
         if mask.ndim == 2:
             mask = mask.unsqueeze(0)
