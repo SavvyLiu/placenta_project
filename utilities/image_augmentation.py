@@ -133,13 +133,19 @@ class SegmentationDataset(Dataset):
         mask_dir: Path to the folder containing masks.
         transform: Callable taking (image, mask) and returning augmented versions.
         """
-        # List only .png files (adjust if needed)
+        # List image files (.png, .jpg, .tif, .tiff)
+        image_extensions = ('.png', '.jpg', '.jpeg', '.tif', '.tiff')
         self.image_paths = sorted([os.path.join(image_dir, f)
-                                   for f in os.listdir(image_dir) if f.lower().endswith('.png')])
+                                   for f in os.listdir(image_dir) if f.lower().endswith(image_extensions)])
+        
+        # List mask files (.png only, as per standard)
         self.mask_paths = sorted([os.path.join(mask_dir, f)
                                   for f in os.listdir(mask_dir) if f.lower().endswith('.png')])
+        
         if len(self.image_paths) != len(self.mask_paths):
-            raise ValueError("The number of images and masks does not match.")
+            raise ValueError(f"The number of images ({len(self.image_paths)}) and masks ({len(self.mask_paths)}) does not match. "
+                           f"Images: {[os.path.basename(p) for p in self.image_paths[:3]]}... "
+                           f"Masks: {[os.path.basename(p) for p in self.mask_paths[:3]]}...")
         self.transform = transform
 
     def __len__(self):
