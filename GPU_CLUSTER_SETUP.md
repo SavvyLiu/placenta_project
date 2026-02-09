@@ -1,32 +1,89 @@
-# GPU Cluster Setup Guide
+# GPU Cluster Setup Guide - CUDA Detection Fix
 
-## Problem
-The cluster cannot detect the GPU when running training scripts.
+## Problem Summary
+Your cluster has:
+- ✓ PyTorch 2.9.1+cu126 installed
+- ✓ CUDA & cuDNN packages installed
+- ✗ **CUDA environment NOT initialized** → GPU not detected by PyTorch
 
-## Solution
+## Root Cause
+PyTorch can't find the CUDA libraries because:
+1. `CUDA_HOME` environment variable not set
+2. `LD_LIBRARY_PATH` doesn't include CUDA library paths
+3. CUDA runtime not initialized in shell environment
 
-### 1. Install Dependencies with Correct CUDA Version
+## Solution: Setup CUDA Environment
 
-The `requirements.txt` has been updated with CUDA 12.6 packages that match your working cluster environment.
+### Step 1: Find Your CUDA Installation
+On the cluster, run:
+```bash
+find /usr -name "cuda" -type d 2>/dev/null | head -5
+find /opt -name "cuda" -type d 2>/dev/null | head -5
+which nvidia-smi
+nvcc --version
+```
 
-**On the Cluster:**
+Expected output:
+```
+/usr/local/cuda
+/usr/local/cuda-12.6
+```
+
+### Step 2: Add CUDA to Your Shell Environment
+
+**Option A: One-Time (for current session only)**
+```bash
+# Find your CUDA path first (from Step 1)
+export CUDA_HOME=/usr/local/cuda-12.6  # <-- Adjust path if needed
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+
+# Verify setup
+python check_gpu.py
+```
+
+**Option B: Permanent (add to ~/.bashrc)**
+```bash
+# Edit ~/.bashrc
+nano ~/.bashrc
+
+# Add these lines at the end:
+export CUDA_HOME=/usr/local/cuda-12.6  # <-- Adjust path!
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+
+# Save and exit (Ctrl+X, Y, Enter)
+
+# Apply changes
+source ~/.bashrc
+python check_gpu.py
+```
+
+**Option C: Using Module System (if available)**
+```bash
+# Check what CUDA modules are available
+module avail cuda
+
+# Load CUDA module
+module load cuda/12.6  # or whatever version is available
+
+# Verify
+python check_gpu.py
+```
+
+### Step 3: Install Project Dependencies
+
+Now that CUDA is set up, install the project requirements:
 
 ```bash
 cd ~/Histology_AI/placenta_project
+git pull origin main
 
-# Option A: Fresh environment (recommended)
-python -m pip install --upgrade pip
-pip install -r requirements.txt --no-cache-dir
-
-# Option B: If you have conda
-conda create -n placenta-gpu python=3.10
-conda activate placenta-gpu
+# Install dependencies (without specifying PyTorch version)
 pip install -r requirements.txt --no-cache-dir
 ```
 
-### 2. Verify GPU Detection
-
-After installation, run the GPU validation script:
+### Step 4: Verify GPU Detection
 
 ```bash
 python check_gpu.py
@@ -39,7 +96,7 @@ GPU & CUDA CONFIGURATION CHECK
 ======================================================================
 
 1. CUDA Runtime Check:
-   ✓ PyTorch Version: 2.6.0
+   ✓ PyTorch Version: 2.9.1+cu126
    ✓ CUDA Available: True
    ✓ CUDA Version: 12.6
    ✓ cuDNN Version: 90501
@@ -56,68 +113,52 @@ GPU & CUDA CONFIGURATION CHECK
 ...
 
 ✓ GPU SETUP LOOKS GOOD!
-
-You can proceed with GPU training:
-  python -m models.efficicentnet_train_smp --epochs 50 --batch-size 16
 ```
 
-### 3. If GPU Still Not Detected
+## Step 5: Start Training
 
-#### Check CUDA Environment Variables
-```bash
-# On cluster, check if CUDA is properly set up:
-echo $CUDA_HOME
-echo $LD_LIBRARY_PATH
-
-# If CUDA_HOME is not set, find CUDA:
-find /usr -name "cuda" -type d 2>/dev/null | head -5
-```
-
-#### Set CUDA Paths (if needed)
-**Add to your `~/.bashrc` or cluster job script:**
+Once GPU is detected, you can train:
 
 ```bash
-# Adjust paths based on your cluster's CUDA installation
-export CUDA_HOME=/usr/local/cuda-12.6  # or wherever CUDA is installed
-export PATH=$CUDA_HOME/bin:$PATH
-export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+# Quick test
+python -m models.efficicentnet_train_smp \
+    --epochs 5 \
+    --batch-size 16 \
+    --subset-size 20
 
-# For conda environments:
-export CUDA_VISIBLE_DEVICES=0  # Use first GPU if available
+# Full training
+python -m models.efficicentnet_train_smp \
+    --epochs 50 \
+    --batch-size 16 \
+    --augment
 ```
 
-#### Verify Paths
-```bash
-nvcc --version       # Should show CUDA 12.6
-nvidia-smi          # Should list GPUs
-```
+---
 
-### 4. Cluster Job Script Example
+## Cluster Job Script Example
 
 **File: `train.sh`**
-
 ```bash
 #!/bin/bash
-#SBATCH --job-name=placenta-gpu
+#SBATCH --job-name=placenta-efficientnet
 #SBATCH --nodes=1
 #SBATCH --gpus=1
 #SBATCH --time=04:00:00
 #SBATCH --mem=50G
 #SBATCH --partition=gpu
 
-# Set up CUDA environment
-module load cuda/12.6  # or whatever module your cluster uses
-export CUDA_VISIBLE_DEVICES=0
+# IMPORTANT: Set CUDA environment on every job
+export CUDA_HOME=/usr/local/cuda-12.6  # <-- Adjust path if needed
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
 
-# Activate environment
-source /path/to/venv/bin/activate  # if using venv
-# OR
-# conda activate placenta-gpu      # if using conda
+# Activate Python environment (if using venv or conda)
+source /path/to/venv/bin/activate  # or: conda activate placenta
 
-# Navigate to project
+# Go to project directory
 cd ~/Histology_AI/placenta_project
 
-# Verify GPU
+# Verify CUDA before training
 echo "Checking GPU availability..."
 python check_gpu.py
 
@@ -129,149 +170,86 @@ if [ $? -eq 0 ]; then
         --augment \
         --early-stopping-patience 10
 else
-    echo "GPU not detected. Check above error messages."
+    echo "GPU not detected. Check error messages above."
     exit 1
 fi
 ```
 
-**Run the job:**
+**Submit job:**
 ```bash
 sbatch train.sh
 ```
 
-### 5. Critical Packages for GPU
+---
 
-These **must** be installed correctly for GPU detection:
+## What Changed in requirements.txt
 
-| Package | Version | Purpose |
-|---------|---------|---------|
-| `torch` | 2.6.0 | Core PyTorch |
-| `nvidia-cuda-runtime-cu12` | 12.6.77 | CUDA runtime |
-| `nvidia-cudnn-cu12` | 9.5.1.17 | cuDNN library |
-| `nvidia-nccl-cu12` | 2.21.5 | GPU communication |
-| `nvidia-cuda-cupti-cu12` | 12.6.80 | CUDA profiling |
+The requirements.txt has been updated to:
+1. **Not pin PyTorch version** - lets cluster's existing PyTorch 2.9.1+cu126 be used
+2. **Not pin CUDA package versions** - lets pip resolve compatible versions
+3. **Keep all other dependencies** - numpy, opencv, segmentation models, etc.
 
-**Verify these are installed:**
+This avoids version conflicts while ensuring GPU support.
+
+---
+
+## Troubleshooting
+
+### "CUDA NOT AVAILABLE" when running check_gpu.py
+1. ✓ Did you set `CUDA_HOME`? → `echo $CUDA_HOME`
+2. ✓ Did you set `LD_LIBRARY_PATH`? → `echo $LD_LIBRARY_PATH | grep cuda`
+3. ✓ Is CUDA actually installed? → `which nvcc`
+4. ✓ Are GPU utilities available? → `nvidia-smi`
+
+### "Cannot find libcudart.so.12"
 ```bash
-pip list | grep nvidia
-```
-
-Should show all nvidia-* packages with cu12 in the name.
-
-### 6. Troubleshooting Checklist
-
-- [ ] GPU is physically present: `nvidia-smi`
-- [ ] CUDA is available: `nvcc --version`
-- [ ] PyTorch recognizes CUDA: `python -c "import torch; print(torch.cuda.is_available())"`
-- [ ] All nvidia packages installed: `pip list | grep nvidia`
-- [ ] No version conflicts: `pip check`
-- [ ] CUDA_HOME is set: `echo $CUDA_HOME`
-- [ ] LD_LIBRARY_PATH includes CUDA: `echo $LD_LIBRARY_PATH | grep cuda`
-
-### 7. Common Issues & Fixes
-
-**"RuntimeError: CUDA out of memory"**
-→ Reduce batch size: `--batch-size 8` instead of 16
-
-**"Could not load dynamic library 'libcudart.so.12'"**
-→ Add to environment:
-```bash
+# Add to your shell environment setup
 export LD_LIBRARY_PATH=/usr/local/cuda-12.6/lib64:$LD_LIBRARY_PATH
 ```
 
-**"NVIDIA driver" version mismatch**
-→ Check driver version: `nvidia-smi | grep Driver`
-→ Ensure PyTorch version is compatible with driver
-
-**"ImportError: cannot import name 'cuda'"**
-→ Reinstall PyTorch:
+### "No module named 'torch'"
 ```bash
-pip install --force-reinstall torch==2.6.0
+pip install --upgrade -r requirements.txt
 ```
 
-### 8. Quick Start on Cluster
-
-After setup, to start training:
-
+### "RuntimeError: CUDA out of memory"
+Reduce batch size:
 ```bash
-# Verify GPU works
-python check_gpu.py
-
-# Start training with optimal settings for A40
 python -m models.efficicentnet_train_smp \
     --epochs 50 \
-    --batch-size 16 \
-    --augment \
-    --early-stopping-patience 10 \
-    --lr-patience 5
-
-# Monitor in another terminal
-watch -n 2 nvidia-smi
-```
-
-### 9. Cluster-Specific Notes
-
-**If using `conda` environment on cluster:**
-```bash
-# Create new environment with specific Python version
-conda create -n placenta python=3.10 -y
-conda activate placenta
-
-# Install PyTorch with CUDA 12.6 support
-conda install pytorch::pytorch pytorch::torchvision torchaudio pytorch::pytorch-cuda=12.6 -c pytorch -c nvidia
-
-# Install remaining requirements
-pip install -r requirements.txt --no-deps  # --no-deps to avoid conflicts
-```
-
-**If cluster uses module system (LMOD):**
-```bash
-# Check available modules
-module avail cuda
-module avail pytorch
-
-# Load modules
-module load cuda/12.6
-module load pytorch/2.6.0  # if available
-# OR install via pip as shown above
+    --batch-size 8  # <-- Reduced from 16
 ```
 
 ---
 
-## Key Difference: CUDA 12.4 vs 12.6
+## Key Points
 
-Your current setup had **CUDA 12.4** packages, but the working cluster setup uses **CUDA 12.6**.
-
-**This mismatch was preventing GPU detection.**
-
-The updated `requirements.txt` now includes:
-- ✓ All CUDA 12.6 packages
-- ✓ PyTorch 2.6.0 (compatible with CUDA 12.6)
-- ✓ Correct numpy version (1.26.4)
-- ✓ All supporting libraries
+✓ **CUDA 12.6** is required (cluster has this)
+✓ **PyTorch 2.9.1+cu126** is already installed (use as-is)
+✓ **CUDA environment variables** are NOT automatically set (you must set them)
+✓ **Check GPU** with `python check_gpu.py` before training
 
 ---
 
-## After Installation: Start Training
+## Quick Copy-Paste Setup (Minimal)
 
 ```bash
-# Test on subset first
-python -m models.efficicentnet_train_smp --epochs 5 --subset-size 20 --batch-size 16
+# Step 1: Set CUDA (adjust path if different!)
+export CUDA_HOME=/usr/local/cuda-12.6
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
 
-# Full training if subset works
-python -m models.efficicentnet_train_smp --epochs 50 --batch-size 16 --augment
-```
+# Step 2: Navigate and update
+cd ~/Histology_AI/placenta_project
+git pull origin main
+pip install -r requirements.txt --no-cache-dir --no-deps
 
-**Expected speed with GPU:**
-- ~5-10 seconds per epoch (vs 120 seconds before GPU setup)
-- Total 50 epochs: ~5-10 minutes (vs ~100 minutes without GPU)
-
----
-
-If issue persists after following this guide, please share output of:
-```bash
+# Step 3: Verify
 python check_gpu.py
-nvidia-smi
-pip list | grep nvidia
-python -c "import torch; print(torch.cuda.is_available())"
+
+# Step 4: Train!
+python -m models.efficicentnet_train_smp --epochs 50 --batch-size 16
 ```
+
+If this doesn't work, share the output of `python check_gpu.py` and we can debug further!
+
