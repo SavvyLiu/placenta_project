@@ -93,6 +93,20 @@ class PlacentaDataset(Dataset):
         # Mask values should be 0 (background), 1 (fetal), 2 (maternal)
         mask = mask.astype(np.int64)
         
+        # NORMALIZE MASK VALUES TO 0, 1, 2 (in case they're stored as 0, 85, 170, 255, etc.)
+        unique_values = np.unique(mask)
+        if len(unique_values) <= 3:
+            # Map unique values to 0, 1, 2
+            value_map = {val: idx for idx, val in enumerate(sorted(unique_values))}
+            mask_normalized = np.zeros_like(mask)
+            for old_val, new_val in value_map.items():
+                mask_normalized[mask == old_val] = new_val
+            mask = mask_normalized.astype(np.int64)
+        else:
+            # If more than 3 values, use quantization
+            mask = (mask / 255.0 * 2).astype(np.int64)  # Scale 0-255 to 0-2
+            mask = np.clip(mask, 0, 2)  # Ensure values are in [0, 2]
+        
         # (Optional) transform: data augmentation, resizing, etc.
         if self.transform is not None:
             # e.g., if using Albumentations or custom transforms
